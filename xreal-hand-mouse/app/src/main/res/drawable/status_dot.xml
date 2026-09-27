@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Oval de 8dp para os "dots" de status (header + acessibilidade). Cor mutável em runtime via
+     view.background.setTint(...) / backgroundTintList — ver MainActivity.onStateChanged e
+     updateAccessibilityStatus. O solid branco aqui é só a base tingida. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+    <size android:width="8dp" android:height="8dp" />
+</shape>

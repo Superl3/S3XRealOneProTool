@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Eye Tools fork: 한국어. 여기 없는 문자열은 values/strings.xml(영어)로 대체됩니다. -->
+<resources>
+    <string name="app_name">XREAL Eye Tools</string>
+    <string name="app_subtitle">XREAL One Pro Eye 핸드 마우스 + 장시간 녹화 (DeX)</string>
+    <string name="notif_channel_capture">Eye 카메라 캡처</string>
+    <string name="notif_capture_text">Eye 카메라 캡처 중</string>
+    <string name="accessibility_steps">1. 아래 \"접근성 설정 열기\"를 누르세요\n2. 목록에서 \"XREAL Eye Tools\"를 찾으세요\n3. 켜고 확인하세요</string>
+    <string name="btn_open_accessibility_settings">접근성 설정 열기</string>
+    <string name="gestures_list">손 이동 — 커서 (트랙패드 방식)\n짧은 핀치 또는 주먹 — 탭, 짧은 핀치 두 번 — 더블탭\n핀치 유지하며 이동 — 드래그\n제자리에서 롱 핀치 — 메뉴 → 손을 좌/상/우로 → 핀치로 확정\n메뉴에서 주먹 — 취소, 주먹 2초 유지 — 커서 중앙 정렬</string>
+
+    <string name="status_idle">권한 대기 중…</string>
+    <string name="btn_grant_permissions">1. 권한 허용</string>
+    <string name="btn_start_capture">2. 안경 연결 &amp; 캡처 시작</string>
+    <string name="usb_prompt_warning">안경을 연결하고 USB 권한 요청 두 개를 최대한 빨리 수락하세요 — 너무 오래 걸리면 핸드셰이크가 시간 초과됩니다.</string>
+    <string name="accessibility_status_active">접근성 서비스 (DeX 커서): 활성</string>
+    <string name="accessibility_status_inactive">접근성 서비스 (DeX 커서): 비활성 — 아래에서 켜세요</string>
+    <string name="dex_display_status_none">DeX 디스플레이: 없음</string>
+    <string name="section_setup">초기 설정</string>
+    <string name="section_cursor">DeX 커서</string>
+    <string name="section_battery">삼성 백그라운드 종료 방지</string>
+    <string name="btn_preview_show">보기</string>
+    <string name="btn_preview_hide">숨기기</string>
+    <string name="section_preview">미리보기 · 추적</string>
+    <string name="section_log">로그</string>
+    <string name="setup_complete_label">✓ 완료</string>
+    <string name="setup_onetime_note">최초 설정 — 필요한 권한을 허용하고 안경을 연결한 뒤 연결 버튼을 누르세요. 설정에서 자동 연결을 켜면 안경 연결 후 몇 초 뒤 USB 권한 요청이 표시됩니다.</string>
+    <string name="status_permissions_ready">권한 OK — 안경 연결 준비 완료</string>
+    <string name="countdown_accept_usb_prompt">지금 USB 권한 요청을 수락하세요 — %1$d초</string>
+    <string name="section_gestures">제스처</string>
+    <string name="section_voice_commands">음성 명령</string>
+    <string name="voice_commands_list_en">Back — 뒤로\nHome / Close — 홈 화면\nRecents — 최근 앱\nSend — Enter 입력\nClear — 입력란 지우기\nOpen &lt;앱 이름&gt; — 앱 실행\nWrite &lt;텍스트&gt; — 받아쓰기</string>
+    <string name="voice_commands_list_ko">뒤로 — 뒤로\n홈 / 닫기 — 홈 화면\n최근 앱 — 최근 앱\n전송 — Enter 입력\n모두 지우기 — 입력란 지우기\n열기 &lt;앱 이름&gt; — 앱 실행\n쓰기 &lt;텍스트&gt; — 받아쓰기</string>
+    <string name="notif_channel_watchdog">가상 마우스 알림</string>
+    <string name="notif_watchdog_title">캡처 중지됨</string>
+    <string name="notif_watchdog_text">눌러서 앱을 다시 열고 캡처를 재개하세요</string>
+    <string name="notif_channel_usb_detached">안경 연결 끊김</string>
+    <string name="notif_usb_detached_title">안경 연결 끊김</string>
+    <string name="notif_usb_detached_text">눌러서 다시 연결</string>
+    <string name="battery_checklist_title">삼성 기기에서 앱이 백그라운드에서 종료되지 않도록 아래 항목을 직접 확인하세요:</string>
+    <string name="btn_battery_app_settings">1. 앱 배터리: 제한 없음으로 설정</string>
+    <string name="btn_battery_background_usage">2. 절전 예외 앱</string>
+    <string name="btn_battery_device_settings">3. 기기 배터리 설정</string>
+    <string name="voice_language_label">음성 인식 언어</string>
+    <string name="voice_language_en">English</string>
+    <string name="voice_language_ko">한국어</string>
+
+    <string name="section_recorder">EYE 레코더</string>
+    <string name="recorder_idle">녹화 중 아님</string>
+    <string name="recorder_status_fmt">● REC %1$s · %2$s · 파일 #%3$d · %4$s</string>
+    <string name="recorder_waiting">카메라 스트림 / 키프레임 대기 중…</string>
+    <string name="recorder_last_file">마지막 파일: %1$s</string>
+    <string name="recorder_error">오류: %1$s</string>
+    <string name="recorder_dropped">누락된 데이터 (저장 속도 부족): %1$d</string>
+    <string name="recorder_audio_on">마이크</string>
+    <string name="recorder_hint">Eye 스트림을 재인코딩 없이 녹화합니다 (HEVC / MJPEG → MKV). 파일은 분할 저장되고, 같은 스트림으로 손 추적도 계속 동작합니다. 저장 공간이 부족하면 오래된 녹화부터 덮어씁니다.</string>
+    <string name="recorder_not_running">먼저 캡처를 시작하세요 (안경 연결 필요)</string>
+    <string name="btn_record_start">녹화</string>
+    <string name="btn_record_stop">녹화 중지</string>
+    <string name="btn_open_settings">설정</string>
+    <string name="btn_open_last_recording">마지막 녹화 열기</string>
+    <string name="btn_stop_capture">연결 해제 (캡처 중지)</string>
+    <string name="notif_recording_title">● Eye 카메라 녹화 중</string>
+
+    <string name="settings_title">설정</string>
+    <string name="pref_cat_hand">핸드 마우스</string>
+    <string name="pref_tracking_enabled">손 추적</string>
+    <string name="pref_tracking_enabled_sum">끄면 녹화 전용 모드: 디코딩·MediaPipe 없음 (발열·배터리 최소)</string>
+    <string name="pref_cursor_sensitivity">커서 감도 (%)</string>
+    <string name="pref_cursor_sensitivity_sum">100 = 기본값. 높을수록 적은 손 이동으로 화면을 가로지름</string>
+    <string name="pref_pinch_sensitivity">핀치 감도</string>
+    <string name="pref_pinch_sensitivity_sum">50 = 기본값. 높으면 더 일찍 인식(오클릭 증가), 낮으면 손가락을 확실히 붙여야 함</string>
+    <string name="pref_smoothing">스무딩</string>
+    <string name="pref_smoothing_sum">50 = 기본값. 높을수록 안정적이지만 지연 증가</string>
+    <string name="pref_dead_zone">데드존 (0.1 px 단위)</string>
+    <string name="pref_dead_zone_sum">15 = 1.5 px. 손을 멈췄을 때 미세 떨림 억제</string>
+    <string name="pref_pinch_hold">핀치 유지 → 드래그 (ms)</string>
+    <string name="pref_pinch_hold_sum">이 시간 이상 누르고 이동하면 드래그; 제자리에서 0.9초 유지하면 메뉴</string>
+    <string name="pref_click_debounce">클릭 디바운스 (프레임)</string>
+    <string name="pref_click_debounce_sum">핀치가 인정되기까지 유지돼야 하는 프레임 수 (3 ≈ 60fps에서 50ms)</string>
+    <string name="pref_ignore_bottom">카메라 영상 아래쪽 손 무시 (%)</string>
+    <string name="pref_ignore_bottom_sum">0 = 끄기. 라이딩 시 30~40 권장 (핸들 위 손으로 클릭되지 않게)</string>
+    <string name="pref_world_pinch">3D 핀치 인식</string>
+    <string name="pref_world_pinch_sum">MediaPipe 3D(미터 단위) 좌표 사용 — 손을 옆으로 돌려도 오클릭 감소</string>
+    <string name="notif_tracking_off">추적 끄기</string>
+    <string name="notif_tracking_on">추적 켜기</string>
+    <string name="pref_cat_gestures">제스처</string>
+    <string name="pref_fist_recenter">주먹 2초 → 커서 가운데로</string>
+    <string name="pref_thumbs_up">엄지척 1초 → 커서 숨김/표시</string>
+    <string name="pref_thumbs_up_sum">1초 유지하면 커서 끄기 / 켜기 (손을 쉴 때 등)</string>
+    <string name="pref_v_sign">V 사인 0.5초 → 음성 명령</string>
+    <string name="pref_v_sign_sum">기본 꺼짐. 마이크 권한 필요</string>
+    <string name="pref_cat_recorder">Eye 레코더</string>
+    <string name="pref_rec_stream">녹화 스트림</string>
+    <string name="pref_rec_audio">오디오</string>
+    <string name="pref_rec_split">파일 분할 간격</string>
+    <string name="pref_rec_storage">저장 위치</string>
+    <string name="pref_rec_auto">Eye 스트림 시작 시 자동 녹화</string>
+    <string name="pref_rec_auto_sum">안경을 꽂으면 녹화가 자동 시작 (연결당 1회)</string>
+    <string name="pref_cat_background">백그라운드</string>
+    <string name="pref_keep_alive">계속 실행 유지</string>
+    <string name="pref_keep_alive_sum">안드로이드가 캡처를 종료하면 워치독이 다시 시작</string>
+    <string name="pref_start_on_connect">Eye 연결 시 자동 시작</string>
+    <string name="pref_start_on_connect_sum">안경을 꽂으면 캡처를 자동으로 시작</string>
+
+    <string-array name="rec_stream_entries">
+        <item>HEVC 1080p — 안경이 실제로 HEVC를 보낼 때만 작은 파일</item>
+        <item>HEVC 네이티브 2048×1512 — 안경이 실제로 HEVC를 보낼 때만</item>
+        <item>MJPEG 1080p — 현재 Eye가 USB로 보내는 형식 (권장)</item>
+    </string-array>
+    <string-array name="rec_audio_entries">
+        <item>끄기</item>
+        <item>휴대폰 마이크</item>
+    </string-array>
+    <string-array name="rec_split_entries">
+        <item>10분</item>
+        <item>30분</item>
+        <item>60분</item>
+    </string-array>
+    <string-array name="rec_storage_entries">
+        <item>갤러리 (Movies/XrealEye)</item>
+        <item>앱 폴더 (앱 삭제 시 함께 삭제)</item>
+    </string-array>
+    <string name="menu_back">뒤로</string>
+    <string name="menu_home">홈</string>
+    <string name="menu_close">창 닫기</string>
+    <string name="btn_photo">사진</string>
+    <string name="tile_record">Eye 녹화</string>
+    <string name="tile_photo">Eye 사진</string>
+    <string name="notif_photo_saved">사진 저장됨: %1$s</string>
+    <string name="notif_photo_failed">사진 실패: %1$s</string>
+    <string name="pref_layer_step">방향 메뉴 선택 거리</string>
+    <string name="pref_layer_step_sum">45 = 손을 카메라 화면 너비의 4.5% 이동하면 선택. 크게 = 더 안정적, 작게 = 팔 이동 적음</string>
+    <string name="pref_cat_buttons">하드웨어 버튼</string>
+    <string name="pref_btn_record">버튼: 녹화 시작 / 중지</string>
+    <string name="pref_btn_photo">버튼: 사진 촬영</string>
+    <string name="pref_btn_tracking">버튼: 손 추적 켜기 / 끄기</string>
+    <string name="pref_btn_clear">버튼 할당 모두 해제</string>
+    <string name="pref_btn_clear_sum">폰 볼륨키, 블루투스 리모컨, 그리고 안드로이드에 키로 전달된다면 안경 버튼에도 사용 가능</string>
+    <string name="pref_btn_none">할당 안 됨 — 여기를 탭한 뒤 버튼을 누르세요</string>
+    <string name="pref_btn_press_now">지금 버튼을 누르세요 (10초)…</string>
+    <string name="pref_btn_need_a11y">먼저 접근성 서비스를 켜세요</string>
+    <string name="btn_add_tiles">빠른 패널에 녹화 / 사진 타일 추가</string>
+    <string name="sc_record_start">녹화 시작</string>
+    <string name="sc_record_stop">녹화 중지</string>
+    <string name="sc_photo">사진 찍기</string>
+    <string-array name="sc_record_start_synonyms">
+        <item>녹화 시작</item>
+        <item>녹화</item>
+        <item>녹화해</item>
+    </string-array>
+    <string-array name="sc_record_stop_synonyms">
+        <item>녹화 중지</item>
+        <item>녹화 멈춰</item>
+        <item>녹화 끝</item>
+    </string-array>
+    <string-array name="sc_photo_synonyms">
+        <item>사진 찍기</item>
+        <item>사진</item>
+        <item>촬영</item>
+    </string-array>
+    <string name="pref_cat_advanced">고급</string>
+    <string name="pref_cat_advanced_sum">데드존, 핀치 유지 시간, 클릭 디바운스, 메뉴 칸 간격, 3D 핀치</string>
+    <string name="pref_palm_menu">롱 핀치 메뉴</string>
+    <string name="pref_magnetic_click">가까운 버튼 클릭 보정</string>
+    <string name="pref_magnetic_click_sum">클릭 순간 접근성에서 찾은 가까운 버튼의 안쪽을 탭합니다. 지원하지 않는 화면은 원래 위치를 탭합니다.</string>
+    <string name="pref_debug_overlay">손 인식 디버그 표시</string>
+    <string name="pref_debug_overlay_sum">DeX 화면에 손 뼈대, 핀치·주먹 상태, 커서 좌표와 클릭 보정 결과를 표시합니다.</string>
+    <string name="pref_palm_menu_sum">제자리에서 0.9초 핀치 → 손을 좌/상/우로 움직여 뒤로 / 홈 / 창 닫기 선택 → 핀치</string>
+    <string name="pref_add_tiles_sum">한 번만: 폰 빠른 패널에 Eye 녹화 / Eye 사진 타일 추가</string>
+    <string name="sc_tracking_on">손 추적 켜기</string>
+    <string name="sc_tracking_off">손 추적 끄기</string>
+    <string-array name="sc_tracking_on_synonyms">
+        <item>손 추적 켜</item>
+        <item>추적 켜</item>
+        <item>커서 켜</item>
+    </string-array>
+    <string-array name="sc_tracking_off_synonyms">
+        <item>손 추적 꺼</item>
+        <item>추적 꺼</item>
+        <item>커서 꺼</item>
+    </string-array>
+    <string name="pref_rec_fps">녹화 프레임</string>
+    <string-array name="rec_fps_entries">
+        <item>30fps — 시간당 약 6.5GB (권장)</item>
+        <item>60fps — 시간당 약 13GB</item>
+    </string-array>
+    <string name="pref_cat_display">디스플레이</string>
+    <string name="pref_dim_auto">폰 조도 센서로 안경 화면 자동 디밍</string>
+    <string name="pref_dim_auto_sum">주변이 어두우면 DeX 화면을 어둡게 합니다 (소프트웨어 디밍 — 안경 자체 밝기 명령은 비공개). 폰이 주머니 속이면 무시.</string>
+    <string name="pref_dim_start_lux">디밍 시작 조도 (lux)</string>
+    <string name="pref_dim_start_lux_sum">주변이 이 값보다 어두울 때만 화면을 어둡게 합니다.</string>
+    <string name="pref_dim_start_lux_current">현재 조도: %.0f lux. 선택한 값보다 어두울 때 디밍합니다.</string>
+    <string name="pref_dim_start_lux_unavailable">조도 센서를 사용할 수 없습니다. 선택한 값 아래에서 디밍합니다.</string>
+    <string name="pref_dim_max">어두운 곳 최대 디밍 (%)</string>
+    <string name="pref_dim_max_sum">어두운 방에서 화면이 최대 얼마나 어두워질지</string>
+    <string name="camera_reconnect_required">Eye 카메라가 영상을 보내지 않습니다. 안경 USB 케이블을 분리했다가 다시 연결해 주세요.</string>
+    <string name="pref_manual_connect">수동 연결</string>
+    <string name="pref_manual_connect_sum">버튼으로만 연결 / 해제합니다. 자동 재연결이나 재시도 반복이 없고, 케이블을 뽑으면 세션이 끝납니다.</string>
+    <string name="conn_manual_attached">안경이 연결됨 - 연결 버튼을 누르세요 (수동 연결)</string>
+    <string name="conn_manual_camera_failed">카메라가 시작되지 않았습니다. 연결 버튼으로 다시 시도하고, 계속 실패하면 안경을 다시 꽂으세요.</string>
+    <string name="conn_usb_permission_busy">USB 권한 요청이 완료되지 않았습니다. 연결 버튼을 눌러 다시 시도하세요.</string>
+    <string name="conn_capture_stopped">연결 해제됨</string>
+</resources>

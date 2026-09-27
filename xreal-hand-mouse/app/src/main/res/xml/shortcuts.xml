@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Eye Tools fork: static app shortcuts (launcher long-press, Bixby / Modes and Routines,
+     assistants that support app shortcuts) + App Actions OPEN_APP_FEATURE (only honoured by Google
+     Assistant for Play-distributed apps). All intents go to the invisible ActionActivity. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <capability android:name="actions.intent.OPEN_APP_FEATURE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity">
+            <parameter
+                android:name="feature"
+                android:key="feature" />
+        </intent>
+    </capability>
+
+    <shortcut
+        android:shortcutId="record_start"
+        android:shortcutShortLabel="@string/sc_record_start">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity"
+            android:data="xreal-eye://action/record-start" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/sc_record_start_synonyms" />
+        </capability-binding>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="record_stop"
+        android:shortcutShortLabel="@string/sc_record_stop">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity"
+            android:data="xreal-eye://action/record-stop" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/sc_record_stop_synonyms" />
+        </capability-binding>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="photo"
+        android:shortcutShortLabel="@string/sc_photo">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity"
+            android:data="xreal-eye://action/photo" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/sc_photo_synonyms" />
+        </capability-binding>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="tracking_on"
+        android:shortcutShortLabel="@string/sc_tracking_on">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity"
+            android:data="xreal-eye://action/tracking-on" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/sc_tracking_on_synonyms" />
+        </capability-binding>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="tracking_off"
+        android:shortcutShortLabel="@string/sc_tracking_off">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.xrealeyetools"
+            android:targetClass="com.raphael.handmouse.ActionActivity"
+            android:data="xreal-eye://action/tracking-off" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/sc_tracking_off_synonyms" />
+        </capability-binding>
+    </shortcut>
+
+</shortcuts>

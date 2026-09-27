@@ -1,0 +1,79 @@
+XREAL Hand Mouse
+Copyright 2026 nudou350
+
+This product is licensed under the Apache License, Version 2.0 (see the LICENSE
+file). This NOTICE file is provided for informational attribution purposes only
+and does not modify the License.
+
+"XREAL" and "Nreal" are trademarks of their respective owner. This project is an
+independent, unofficial work and is NOT affiliated with, endorsed by, or
+sponsored by XREAL. Those names are used only to describe hardware compatibility.
+
+"XREAL Eye Tools" fork: adds the Eye recorder (recording/ package), the settings
+screen, the tunable hand-mouse parameters and the Korean translation on top of
+the original work. Files changed by the fork are marked "Eye Tools fork" in
+comments. See EYE_TOOLS_KO.md.
+
+================================================================================
+Third-party components
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MediaPipe HandLandmarker model
+--------------------------------------------------------------------------------
+
+File: xreal-hand-mouse/app/src/main/assets/hand_landmarker.task
+
+Copyright Google LLC.
+Licensed under the Apache License, Version 2.0.
+  https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
+
+--------------------------------------------------------------------------------
+2. Aloim reverse-engineering project (derived code)
+--------------------------------------------------------------------------------
+
+Portions of the following Kotlin source files are DERIVED FROM (adapted from,
+not copied verbatim) the Aloim reverse-engineering project:
+
+  xreal-hand-mouse/app/src/main/kotlin/com/raphael/handmouse/capture/UvcCameraHelper.kt
+  xreal-hand-mouse/app/src/main/kotlin/com/raphael/handmouse/capture/HevcDecoder.kt
+  xreal-hand-mouse/app/src/main/kotlin/com/raphael/handmouse/capture/HevcNal.kt
+  xreal-hand-mouse/app/src/main/kotlin/com/raphael/handmouse/capture/FrameAssembler.kt
+  xreal-hand-mouse/app/src/main/kotlin/com/raphael/handmouse/capture/GlassesConnection.kt
+    (activation control-flow only; the USB control-protocol bytes were mapped by
+     this project's own black-box traffic capture, not taken from Aloim)
+
+Source:
+  https://github.com/Aloim/Xreal-One-Pro-Eye-RGB-Camera-feed-on-Android
+
+MIT License
+
+Copyright (c) 2026 Aloim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+Removed proprietary components
+================================================================================
+
+The two proprietary XREAL native libraries (libota-lib.so, libnr_glasses_api.so)
+and the verbatim Java shim that declared their `native` methods
+(ai.nreal.glasses.control.*) have been REMOVED from this project. The camera-Eye
+control protocol they implemented is now reimplemented in pure Kotlin
+(com.raphael.handmouse.glasses.*) from this project's own black-box USB capture.

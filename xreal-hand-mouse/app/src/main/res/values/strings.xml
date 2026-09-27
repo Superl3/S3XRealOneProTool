@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XREAL Eye Tools</string>
+    <string name="app_subtitle">Hand mouse + long recording for XREAL One Pro Eye on DeX</string>
+    <string name="notif_channel_capture">Eye camera capture</string>
+    <string name="notif_capture_text">Capturing eye camera</string>
+    <string name="status_idle">Waiting for permissions…</string>
+    <string name="btn_grant_permissions">1. Grant permissions</string>
+    <string name="btn_start_capture">2. Connect glasses &amp; start capture</string>
+    <string name="usb_prompt_warning">Connect the glasses and accept both USB permission prompts as quickly as possible — the handshake times out if it takes too long.</string>
+    <string name="btn_open_accessibility_settings">Open Accessibility Settings</string>
+    <string name="accessibility_status_active">Accessibility service (DeX cursor): active</string>
+    <string name="accessibility_status_inactive">Accessibility service (DeX cursor): inactive — enable it below</string>
+    <string name="dex_display_status_none">DeX display: not found</string>
+
+    <!-- Eyebrows (section labels) — uppercase by visual convention of an instrument panel -->
+    <string name="section_setup">SETUP</string>
+    <string name="section_cursor">CURSOR ON DEX</string>
+    <string name="section_battery">SAMSUNG ANTI-KILL</string>
+    <string name="btn_preview_show">Show</string>
+    <string name="btn_preview_hide">Hide</string>
+    <string name="section_preview">PREVIEW · TRACKING</string>
+    <string name="section_log">LOG</string>
+
+    <!-- Onboarding UX (2026-07-24): collapsible setup + accessibility steps + gestures/voice
+         command reference lists. See docs/superpowers/specs/2026-07-24-onboarding-ux-english-design.md -->
+    <string name="setup_complete_label">✓ Complete</string>
+    <string name="setup_onetime_note">One-time setup — grant the requested permissions, connect the glasses, then tap Connect. Automatic connection can be enabled in Settings; its USB prompt waits a few seconds after attachment.</string>
+    <string name="status_permissions_ready">Permissions OK — ready to connect the glasses</string>
+    <string name="countdown_accept_usb_prompt">Accept the USB prompt now — %1$ds</string>
+    <string name="accessibility_steps">1. Tap \"Open Accessibility Settings\" below\n2. Find \"XREAL Eye Tools\" in the list\n3. Enable it and confirm</string>
+    <string name="section_gestures">GESTURES</string>
+    <string name="gestures_list">Move hand — cursor (trackpad style)\nShort pinch or fist — tap; two short pinches — double tap\nHold pinch and move — drag\nStationary long pinch — menu; move left/up/right, then pinch to confirm\nFist in menu — cancel; hold fist 2s to recenter cursor</string>
+    <string name="section_voice_commands">VOICE COMMANDS</string>
+    <string name="voice_commands_list_en">Back — go back\nHome / Close — go to home screen\nRecents — open recent apps\nSend — press Enter\nClear — clear text\nOpen &lt;app name&gt; — launch an app\nWrite &lt;text&gt; — dictate text</string>
+    <string name="voice_commands_list_ko">뒤로 — go back\n홈 / 닫기 — go to home screen\n최근 앱 — open recent apps\n전송 — press Enter\n모두 지우기 — clear text\n열기 &lt;앱 이름&gt; — launch an app\n쓰기 &lt;텍스트&gt; — dictate text</string>
+
+    <!-- Tarefa 5: notificações de watchdog / reconexão USB -->
+    <string name="notif_channel_watchdog">Virtual mouse alerts</string>
+    <string name="notif_watchdog_title">Capture stopped</string>
+    <string name="notif_watchdog_text">Tap to reopen the app and resume capture</string>
+    <!-- Canal IMPORTANCE_HIGH separado do de captura (fix de revisão) — ver Javadoc de
+         EyeCaptureService ("Reconexão USB") sobre por que a importância do canal importa. -->
+    <string name="notif_channel_usb_detached">Glasses disconnected</string>
+    <string name="notif_usb_detached_title">Glasses disconnected</string>
+    <string name="notif_usb_detached_text">Tap to reconnect</string>
+
+    <!-- Tarefa 5: card de checklist anti-kill Samsung (PLANO.md §7 item 4) — best-effort,
+         versão mínima (não o checklist completo, fora de escopo desta tarefa) -->
+    <string name="battery_checklist_title">To keep the app from being killed in the background on Samsung, manually check each item below:</string>
+    <string name="btn_battery_app_settings">1. App battery: set to Unrestricted</string>
+    <string name="btn_battery_background_usage">2. Apps that never sleep</string>
+    <string name="btn_battery_device_settings">3. Device battery settings</string>
+
+    <!-- Controle por voz (2026-07-23) -->
+    <string name="voice_language_label">Voice recognition language</string>
+    <string name="voice_language_en">English</string>
+    <string name="voice_language_ko">한국어</string>
+    <!-- ===================== Eye Tools fork ===================== -->
+    <string name="section_recorder">EYE RECORDER</string>
+    <string name="recorder_idle">Not recording</string>
+    <string name="recorder_status_fmt">● REC %1$s · %2$s · file #%3$d · %4$s</string>
+    <string name="recorder_waiting">Waiting for the camera stream / keyframe…</string>
+    <string name="recorder_last_file">Last file: %1$s</string>
+    <string name="recorder_error">Error: %1$s</string>
+    <string name="recorder_dropped">Dropped chunks (storage too slow): %1$d</string>
+    <string name="recorder_audio_on">mic</string>
+    <string name="recorder_hint">Records the Eye stream without re-encoding (HEVC / MJPEG → MKV), split into segments, while hand tracking keeps running on the same stream. When storage runs low the oldest recordings are overwritten.</string>
+    <string name="recorder_not_running">Start capture first (glasses connected)</string>
+    <string name="btn_record_start">Record</string>
+    <string name="btn_record_stop">Stop recording</string>
+    <string name="btn_open_settings">Settings</string>
+    <string name="btn_open_last_recording">Open last recording</string>
+    <string name="btn_stop_capture">Disconnect (stop capture)</string>
+    <string name="notif_recording_title">● Recording Eye camera</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="pref_cat_hand">Hand mouse</string>
+    <string name="pref_tracking_enabled">Hand tracking</string>
+    <string name="pref_tracking_enabled_sum">Off = recording-only mode: no decoding, no MediaPipe (coolest, lowest battery)</string>
+    <string name="pref_cursor_sensitivity">Cursor sensitivity (%)</string>
+    <string name="pref_cursor_sensitivity_sum">100 = default. Higher = less hand movement per screen width</string>
+    <string name="pref_pinch_sensitivity">Pinch sensitivity</string>
+    <string name="pref_pinch_sensitivity_sum">50 = default. Higher = pinch registers earlier (more false clicks); lower = fingers must touch firmly</string>
+    <string name="pref_smoothing">Smoothing</string>
+    <string name="pref_smoothing_sum">50 = default. Higher = steadier but laggier cursor</string>
+    <string name="pref_dead_zone">Dead-zone (0.1 px)</string>
+    <string name="pref_dead_zone_sum">15 = 1.5 px. Suppresses micro-jitter while holding still</string>
+    <string name="pref_pinch_hold">Pinch hold → drag (ms)</string>
+    <string name="pref_pinch_hold_sum">Pinch shorter than this = click, longer = drag</string>
+    <string name="pref_click_debounce">Click debounce (frames)</string>
+    <string name="pref_click_debounce_sum">Frames a pinch must persist before it counts (3 ≈ 50 ms at 60 fps)</string>
+    <string name="pref_ignore_bottom">Ignore hands low in the camera view (%)</string>
+    <string name="pref_ignore_bottom_sum">0 = off. Riding: 30–40 so hands on the handlebars never click</string>
+    <string name="pref_world_pinch">3D pinch detection</string>
+    <string name="pref_world_pinch_sum">Uses MediaPipe metric 3D landmarks — fewer false clicks when the hand is turned sideways</string>
+    <string name="notif_tracking_off">Tracking off</string>
+    <string name="notif_tracking_on">Tracking on</string>
+    <string name="pref_cat_gestures">Gestures</string>
+    <string name="pref_fist_recenter">Fist hold 2 s → recenter cursor</string>
+    <string name="pref_thumbs_up">Thumbs-up 1 s → hide/show cursor</string>
+    <string name="pref_thumbs_up_sum">Hold 1 s to switch the cursor off / on (e.g. while resting your hands)</string>
+    <string name="pref_v_sign">V sign 0.5 s → voice commands</string>
+    <string name="pref_v_sign_sum">Off by default. Needs microphone permission</string>
+    <string name="pref_cat_recorder">Eye recorder</string>
+    <string name="pref_rec_stream">Recording stream</string>
+    <string name="pref_rec_audio">Audio</string>
+    <string name="pref_rec_split">Split files every</string>
+    <string name="pref_rec_storage">Storage</string>
+    <string name="pref_rec_auto">Auto-record when the Eye stream starts</string>
+    <string name="pref_rec_auto_sum">Plug in the glasses → recording starts by itself (once per connection)</string>
+    <string name="pref_cat_background">Background</string>
+    <string name="pref_keep_alive">Keep alive</string>
+    <string name="pref_keep_alive_sum">Watchdog restarts capture if Android kills it</string>
+    <string name="pref_start_on_connect">Start when Eye is connected</string>
+    <string name="pref_start_on_connect_sum">Start capture automatically when the glasses are plugged in</string>
+
+    <string-array name="rec_stream_entries">
+        <item>HEVC 1080p — small files, if the glasses really send HEVC</item>
+        <item>HEVC native 2048×1512 — if the glasses really send HEVC</item>
+        <item>MJPEG 1080p — what the Eye sends over USB today (recommended)</item>
+    </string-array>
+    <string-array name="rec_stream_values" translatable="false">
+        <item>hevc_1080</item>
+        <item>hevc_native</item>
+        <item>mjpeg</item>
+    </string-array>
+    <string-array name="rec_audio_entries">
+        <item>Off</item>
+        <item>Phone microphone</item>
+    </string-array>
+    <string-array name="rec_audio_values" translatable="false">
+        <item>off</item>
+        <item>mic</item>
+    </string-array>
+    <string-array name="rec_split_entries">
+        <item>10 minutes</item>
+        <item>30 minutes</item>
+        <item>60 minutes</item>
+    </string-array>
+    <string-array name="rec_split_values" translatable="false">
+        <item>10</item>
+        <item>30</item>
+        <item>60</item>
+    </string-array>
+    <string-array name="rec_storage_entries">
+        <item>Gallery (Movies/XrealEye)</item>
+        <item>App folder (deleted with the app)</item>
+    </string-array>
+    <string-array name="rec_storage_values" translatable="false">
+        <item>gallery</item>
+        <item>app</item>
+    </string-array>
+    <string name="menu_back">Back</string>
+    <string name="menu_home">Home</string>
+    <string name="menu_close">Close app</string>
+    <string name="btn_photo">Photo</string>
+    <string name="tile_record">Eye record</string>
+    <string name="tile_photo">Eye photo</string>
+    <string name="notif_photo_saved">Photo saved: %1$s</string>
+    <string name="notif_photo_failed">Photo failed: %1$s</string>
+    <string name="pref_layer_step">Direction selection distance</string>
+    <string name="pref_layer_step_sum">45 = move the hand 4.5% of the camera image width. Larger = steadier, smaller = less arm movement</string>
+    <string name="pref_cat_buttons">Hardware buttons</string>
+    <string name="pref_btn_record">Button: start / stop recording</string>
+    <string name="pref_btn_photo">Button: take photo</string>
+    <string name="pref_btn_tracking">Button: hand tracking on / off</string>
+    <string name="pref_btn_clear">Clear button assignments</string>
+    <string name="pref_btn_clear_sum">Works with phone volume keys, Bluetooth remotes, and glasses buttons if they reach Android as key presses</string>
+    <string name="pref_btn_none">Not assigned — tap, then press a button</string>
+    <string name="pref_btn_press_now">Press the button now (10 s)…</string>
+    <string name="pref_btn_need_a11y">Turn on the accessibility service first</string>
+    <string name="btn_add_tiles">Add record / photo tiles to the quick panel</string>
+    <string name="sc_record_start">Start recording</string>
+    <string name="sc_record_stop">Stop recording</string>
+    <string name="sc_photo">Take photo</string>
+    <string-array name="sc_record_start_synonyms">
+        <item>start recording</item>
+        <item>record</item>
+        <item>recording</item>
+    </string-array>
+    <string-array name="sc_record_stop_synonyms">
+        <item>stop recording</item>
+        <item>end recording</item>
+    </string-array>
+    <string-array name="sc_photo_synonyms">
+        <item>take photo</item>
+        <item>photo</item>
+        <item>picture</item>
+    </string-array>
+    <string name="pref_cat_advanced">Advanced</string>
+    <string name="pref_cat_advanced_sum">Dead-zone, pinch hold, click debounce, menu selection distance, 3D pinch</string>
+    <string name="pref_palm_menu">Long pinch menu</string>
+    <string name="pref_magnetic_click">Nearby button click correction</string>
+    <string name="pref_magnetic_click_sum">At click time, tap inside a nearby accessible button. Falls back to the original point on unsupported screens.</string>
+    <string name="pref_debug_overlay">Hand tracking debug overlay</string>
+    <string name="pref_debug_overlay_sum">Show hand skeleton, pinch and fist state, cursor position and click correction on DeX.</string>
+    <string name="pref_palm_menu_sum">Hold a stationary pinch for 0.9s, move left/up/right to choose, then pinch</string>
+    <string name="pref_add_tiles_sum">One-time: adds the Eye record and Eye photo tiles to the quick panel</string>
+    <string name="sc_tracking_on">Hand tracking on</string>
+    <string name="sc_tracking_off">Hand tracking off</string>
+    <string-array name="sc_tracking_on_synonyms">
+        <item>hand tracking on</item>
+        <item>tracking on</item>
+        <item>cursor on</item>
+    </string-array>
+    <string-array name="sc_tracking_off_synonyms">
+        <item>hand tracking off</item>
+        <item>tracking off</item>
+        <item>cursor off</item>
+    </string-array>
+    <string name="pref_rec_fps">Recording frame rate</string>
+    <string-array name="rec_fps_entries">
+        <item>30 fps — about 6.5 GB per hour (recommended)</item>
+        <item>60 fps — about 13 GB per hour</item>
+    </string-array>
+    <string-array name="rec_fps_values" translatable="false">
+        <item>30</item>
+        <item>60</item>
+    </string-array>
+    <string name="pref_cat_display">Display</string>
+    <string name="pref_dim_auto">Auto-dim the glasses from the phone light sensor</string>
+    <string name="pref_dim_auto_sum">Darkens the DeX screen in dim surroundings (software dimming, since the glasses brightness command is not public). Ignored while the phone is in a pocket.</string>
+    <string name="pref_dim_start_lux">Start dimming below (lux)</string>
+    <string name="pref_dim_start_lux_sum">Only dim when ambient light is below this level.</string>
+    <string name="pref_dim_start_lux_current">Current light: %.0f lux. Dimming starts below the selected value.</string>
+    <string name="pref_dim_start_lux_unavailable">Light sensor unavailable. Dimming starts below the selected value.</string>
+    <string name="pref_dim_max">Maximum dimming in the dark (%)</string>
+    <string name="pref_dim_max_sum">How dark the screen may get in a dark room</string>
+    <string name="camera_reconnect_required">The Eye camera stopped sending video. Disconnect and reconnect the glasses USB cable to retry.</string>
+    <string name="pref_manual_connect">Manual connection</string>
+    <string name="pref_manual_connect_sum">Connect and disconnect only with the buttons. No automatic reconnect or retry loop; unplugging ends the session.</string>
+    <string name="conn_manual_attached">Glasses attached - tap Connect (manual connection)</string>
+    <string name="conn_manual_camera_failed">The camera did not start. Tap Connect to try again; replug the glasses if it keeps failing.</string>
+    <string name="conn_usb_permission_busy">USB permission did not complete. Tap Connect to retry.</string>
+    <string name="conn_capture_stopped">Disconnected</string>
+</resources>

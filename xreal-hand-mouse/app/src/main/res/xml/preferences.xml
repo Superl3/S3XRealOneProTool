@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Eye Tools fork settings. Keys/defaults must match util/Prefs.kt (Prefs.handSettings). -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="@string/pref_cat_hand">
+        <SwitchPreferenceCompat
+            android:key="hm_tracking_enabled"
+            android:defaultValue="true"
+            android:title="@string/pref_tracking_enabled"
+            android:summary="@string/pref_tracking_enabled_sum" />
+        <SeekBarPreference
+            android:key="hm_cursor_sensitivity"
+            android:defaultValue="100"
+            android:max="200"
+            app:min="50"
+            app:showSeekBarValue="true"
+            app:seekBarIncrement="5"
+            android:title="@string/pref_cursor_sensitivity"
+            android:summary="@string/pref_cursor_sensitivity_sum"
+            android:dependency="hm_tracking_enabled" />
+        <SeekBarPreference
+            android:key="hm_pinch_sensitivity"
+            android:defaultValue="50"
+            android:max="100"
+            app:min="0"
+            app:showSeekBarValue="true"
+            android:title="@string/pref_pinch_sensitivity"
+            android:summary="@string/pref_pinch_sensitivity_sum"
+            android:dependency="hm_tracking_enabled" />
+        <SeekBarPreference
+            android:key="hm_smoothing"
+            android:defaultValue="50"
+            android:max="100"
+            app:min="0"
+            app:showSeekBarValue="true"
+            android:title="@string/pref_smoothing"
+            android:summary="@string/pref_smoothing_sum"
+            android:dependency="hm_tracking_enabled" />
+        <SeekBarPreference
+            android:key="hm_ignore_bottom"
+            android:defaultValue="0"
+            android:max="60"
+            app:min="0"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            android:title="@string/pref_ignore_bottom"
+            android:summary="@string/pref_ignore_bottom_sum"
+            android:dependency="hm_tracking_enabled" />
+
+        <PreferenceScreen
+            android:key="hm_advanced"
+            android:title="@string/pref_cat_advanced"
+            android:summary="@string/pref_cat_advanced_sum"
+            android:dependency="hm_tracking_enabled">
+            <SeekBarPreference
+                android:key="hm_dead_zone"
+                android:defaultValue="15"
+                android:max="50"
+                app:min="0"
+                app:showSeekBarValue="true"
+                android:title="@string/pref_dead_zone"
+                android:summary="@string/pref_dead_zone_sum" />
+            <SeekBarPreference
+                android:key="hm_pinch_hold_ms"
+                android:defaultValue="400"
+                android:max="1000"
+                app:min="200"
+                app:seekBarIncrement="25"
+                app:showSeekBarValue="true"
+                android:title="@string/pref_pinch_hold"
+                android:summary="@string/pref_pinch_hold_sum" />
+            <SeekBarPreference
+                android:key="hm_click_debounce"
+                android:defaultValue="3"
+                android:max="6"
+                app:min="1"
+                app:showSeekBarValue="true"
+                android:title="@string/pref_click_debounce"
+                android:summary="@string/pref_click_debounce_sum" />
+            <SeekBarPreference
+                android:key="hm_layer_step"
+                android:defaultValue="45"
+                android:max="100"
+                app:min="25"
+                app:seekBarIncrement="5"
+                app:showSeekBarValue="true"
+                android:title="@string/pref_layer_step"
+                android:summary="@string/pref_layer_step_sum" />
+            <SwitchPreferenceCompat
+                android:key="hm_world_pinch"
+                android:defaultValue="false"
+                android:title="@string/pref_world_pinch"
+                android:summary="@string/pref_world_pinch_sum" />
+        </PreferenceScreen>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_cat_gestures"
+        android:dependency="hm_tracking_enabled">
+        <SwitchPreferenceCompat
+            android:key="hm_magnetic_click"
+            android:defaultValue="true"
+            android:title="@string/pref_magnetic_click"
+            android:summary="@string/pref_magnetic_click_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_debug_overlay"
+            android:defaultValue="false"
+            android:title="@string/pref_debug_overlay"
+            android:summary="@string/pref_debug_overlay_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_palm_menu"
+            android:defaultValue="true"
+            android:title="@string/pref_palm_menu"
+            android:summary="@string/pref_palm_menu_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_thumbs_up_mute"
+            android:defaultValue="true"
+            android:title="@string/pref_thumbs_up"
+            android:summary="@string/pref_thumbs_up_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_fist_recenter"
+            android:defaultValue="true"
+            android:title="@string/pref_fist_recenter" />
+        <SwitchPreferenceCompat
+            android:key="hm_v_sign_voice"
+            android:defaultValue="false"
+            android:title="@string/pref_v_sign"
+            android:summary="@string/pref_v_sign_sum" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_recorder">
+        <ListPreference
+            android:key="rec_stream"
+            android:defaultValue="mjpeg"
+            android:entries="@array/rec_stream_entries"
+            android:entryValues="@array/rec_stream_values"
+            android:title="@string/pref_rec_stream"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="rec_fps"
+            android:defaultValue="30"
+            android:entries="@array/rec_fps_entries"
+            android:entryValues="@array/rec_fps_values"
+            android:title="@string/pref_rec_fps"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="rec_audio"
+            android:defaultValue="off"
+            android:entries="@array/rec_audio_entries"
+            android:entryValues="@array/rec_audio_values"
+            android:title="@string/pref_rec_audio"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="rec_split_minutes"
+            android:defaultValue="30"
+            android:entries="@array/rec_split_entries"
+            android:entryValues="@array/rec_split_values"
+            android:title="@string/pref_rec_split"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="rec_storage"
+            android:defaultValue="gallery"
+            android:entries="@array/rec_storage_entries"
+            android:entryValues="@array/rec_storage_values"
+            android:title="@string/pref_rec_storage"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            android:key="rec_auto_start"
+            android:defaultValue="false"
+            android:title="@string/pref_rec_auto"
+            android:summary="@string/pref_rec_auto_sum" />
+        <Preference
+            android:key="add_tiles"
+            android:title="@string/btn_add_tiles"
+            android:summary="@string/pref_add_tiles_sum" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_buttons">
+        <Preference
+            android:key="btn_record"
+            android:title="@string/pref_btn_record" />
+        <Preference
+            android:key="btn_photo"
+            android:title="@string/pref_btn_photo" />
+        <Preference
+            android:key="btn_tracking"
+            android:title="@string/pref_btn_tracking" />
+        <Preference
+            android:key="btn_clear"
+            android:title="@string/pref_btn_clear"
+            android:summary="@string/pref_btn_clear_sum" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_display">
+        <SwitchPreferenceCompat
+            android:key="dim_auto"
+            android:defaultValue="true"
+            android:title="@string/pref_dim_auto"
+            android:summary="@string/pref_dim_auto_sum" />
+        <SeekBarPreference
+            android:key="dim_start_lux"
+            android:defaultValue="20"
+            android:max="200"
+            app:min="5"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            android:title="@string/pref_dim_start_lux"
+            android:summary="@string/pref_dim_start_lux_sum"
+            android:dependency="dim_auto" />
+        <SeekBarPreference
+            android:key="dim_max"
+            android:defaultValue="60"
+            android:max="90"
+            app:min="10"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            android:title="@string/pref_dim_max"
+            android:summary="@string/pref_dim_max_sum"
+            android:dependency="dim_auto" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_background">
+        <SwitchPreferenceCompat
+            android:key="bg_manual_connect"
+            android:defaultValue="true"
+            android:disableDependentsState="true"
+            android:title="@string/pref_manual_connect"
+            android:summary="@string/pref_manual_connect_sum" />
+        <SwitchPreferenceCompat
+            android:dependency="bg_manual_connect"
+            android:key="bg_keep_alive"
+            android:defaultValue="true"
+            android:title="@string/pref_keep_alive"
+            android:summary="@string/pref_keep_alive_sum" />
+        <SwitchPreferenceCompat
+            android:dependency="bg_manual_connect"
+            android:key="bg_start_on_connect"
+            android:defaultValue="true"
+            android:title="@string/pref_start_on_connect"
+            android:summary="@string/pref_start_on_connect_sum" />
+    </PreferenceCategory>
+</PreferenceScreen>

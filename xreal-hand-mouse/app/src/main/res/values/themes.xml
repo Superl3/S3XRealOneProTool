@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme.HandMouse: dark cockpit. Material3.Dark também descende (via a material lib) da
+         cadeia Theme.AppCompat, então MainActivity continua AppCompatActivity sem crash no
+         setContentView. -->
+    <style name="Theme.HandMouse" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/hm_accent</item>
+        <item name="colorOnPrimary">@color/hm_on_accent</item>
+        <item name="colorSurface">@color/hm_surface</item>
+        <item name="colorOnSurface">@color/hm_text_primary</item>
+        <item name="android:colorBackground">@color/hm_bg</item>
+        <item name="colorOutline">@color/hm_stroke</item>
+        <item name="android:statusBarColor">@color/hm_bg</item>
+        <item name="android:navigationBarColor">@color/hm_bg</item>
+    </style>
+
+    <!-- Eyebrow: label de seção pequeno, espaçado, secundário -->
+    <style name="Hm.Eyebrow" parent="Widget.MaterialComponents.TextView">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/hm_text_secondary</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:layout_marginBottom">10dp</item>
+    </style>
+
+    <!-- Botão primário (filled, colorPrimary) — sentence case, 52dp de altura, cantos 12dp -->
+    <style name="Hm.Button.Filled" parent="Widget.Material3.Button">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- Botão secundário (outlined) — stroke discreto, texto primário -->
+    <style name="Hm.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:textColor">@color/hm_text_primary</item>
+        <item name="strokeColor">@color/hm_stroke</item>
+    </style>
+
+    <!-- Botão de item de checklist (outlined, texto alinhado ao início, full width) -->
+    <style name="Hm.Button.Checklist" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:textColor">@color/hm_text_primary</item>
+        <item name="strokeColor">@color/hm_stroke</item>
+        <item name="android:textAlignment">viewStart</item>
+        <item name="android:gravity">center_vertical|start</item>
+    </style>
+</resources>

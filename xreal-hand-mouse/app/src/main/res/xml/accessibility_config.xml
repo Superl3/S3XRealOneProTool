@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- canPerformGestures=true habilita dispatchGesture — usado desde a Tarefa 5 pelo
+     GestureInjector (clique/drag reais no display do DeX). isAccessibilityTool=true
+     (brief Tarefa 4).
+
+     eventTypes/notificationTimeout (fix de estabilidade 2026-07-23): era typeAllMask com
+     timeout de 100ms — o sistema entregava TODO evento de acessibilidade do DeX inteiro à main
+     thread deste processo (que também roda o pipeline de captura), e onAccessibilityEvent não
+     usa NENHUM deles. typeAnnouncement (raríssimo) + timeout de 10s reduz esse tráfego a
+     praticamente zero sem perder capacidade nenhuma (dispatchGesture/overlay não dependem de
+     eventos).
+
+     canRetrieveWindowContent + flagRetrieveInteractiveWindows (2026-07-23, controle por voz):
+     o ditado precisa achar o campo de texto FOCADO em qualquer janela/display (DeX) via
+     findFocus(FOCUS_INPUT) — sem os dois, retorna null sempre. onAccessibilityEvent continua
+     sem uso (eventTypes segue typeAnnouncement). -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAnnouncement"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
+    android:canRequestFilterKeyEvents="true"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:isAccessibilityTool="true"
+    android:notificationTimeout="10000" />

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Overlay debug-only (o manifest merger do AGP so aplica src/debug/AndroidManifest.xml
+    a variant "debug", nunca a "release"). Task 3 (spike): wrap.sh + LD_PRELOAD do
+    interpositor ioctl (libioctltap.so) exige que a .so exista num caminho real de
+    filesystem em runtime; LD_PRELOAD nao entende bibliotecas empacotadas direto no APK.
+
+    Com compileSdk/minSdk desta app (34), o AGP 8.10.1 usa useLegacyPackaging=false por
+    padrao (extractNativeLibs="false" no manifest final), ou seja as .so ficam soterradas
+    dentro do APK e nunca sao gravadas em /data/app/.../lib/arm64/. Isso quebrava o
+    wrap.sh com "CANNOT LINK EXECUTABLE ... library libioctltap.so not found" (confirmado
+    em campo, logcat real).
+
+    Forcar extractNativeLibs="true" aqui restaura a extracao classica das .so para o
+    disco, SOMENTE na variant debug. build.gradle.kts nao expoe useLegacyPackaging por
+    build type nesta versao do AGP (so existe no nivel global android.packaging.jniLibs,
+    que afetaria o release tambem), entao este overlay de manifest e o mecanismo
+    variant-scoped correto (simetrico a exclusao de libioctltap.so do release via
+    Variant API em build.gradle.kts).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application android:extractNativeLibs="true" tools:replace="android:extractNativeLibs"/>
+</manifest>

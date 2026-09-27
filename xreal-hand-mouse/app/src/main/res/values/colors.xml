@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tokens da UI "painel de instrumentos AR" (dark cockpit). O accent (#00E676) é o MESMO
+     verde do esqueleto de mão desenhado pelo HandOverlayView — identidade visual coesa. -->
+<resources>
+    <color name="hm_bg">#0B0E12</color>
+    <color name="hm_surface">#151A21</color>
+    <color name="hm_stroke">#262E39</color>
+    <color name="hm_text_primary">#E8EDF3</color>
+    <color name="hm_text_secondary">#8D98A8</color>
+    <color name="hm_accent">#00E676</color>
+    <color name="hm_on_accent">#06210F</color>
+    <color name="hm_warning">#FFC53D</color>
+    <color name="hm_error">#FF5D5D</color>
+    <color name="hm_cyan">#4DD8FF</color>
+</resources>
