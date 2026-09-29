@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.raphael.handmouse.capture.MjpegStreamAssembler
+import com.raphael.handmouse.imu.ImuSample
+import java.nio.channels.Channels
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,6 +67,8 @@ class EyeRecorder(context: Context, private val listener: Listener) {
         val storage: RecordingOutput.Storage,
         /** MJPEG frames are dropped above this rate (30 halves the size: ~6.5 GB/h at 1080p). */
         val maxFps: Int = 30,
+        /** Write the glasses' IMU next to each segment as a Gyroflow `.gcsv` ([GyroLog]). */
+        val gyroLog: Boolean = false,
     )
 
     data class Status(
@@ -150,6 +154,12 @@ class EyeRecorder(context: Context, private val listener: Listener) {
         queue.offer(Item.Chunk(data, System.nanoTime() / 1000))
     }
 
+    /** IMU thread: one glasses IMU sample ([localNs] on `System.nanoTime()`'s clock). Goes
+     * straight into the open segment's [GyroLog] (synchronized), not through the queue. */
+    fun onImuSample(sample: ImuSample, localNs: Long) {
+        gyroLog?.add(localNs, sample.gx, sample.gy, sample.gz, sample.ax, sample.ay, sample.az)
+    }
+
     /** Publishes recordings left pending by a previous crash. Runs on the recorder thread before
      * anything queued later, so it can never touch a segment being written. */
     fun recoverPending() {
@@ -183,6 +193,8 @@ class EyeRecorder(context: Context, private val listener: Listener) {
     private var hevcNeedKeyframe = true
 
     private var writer: MkvWriter? = null
+    @Volatile private var gyroLog: GyroLog? = null
+    private var gyroOut: RecordingOutput.OutputFile? = null
     private var writerFormat = -1
     private var writerCsd: ByteArray? = null
     private var outputFile: RecordingOutput.OutputFile? = null
@@ -325,6 +337,7 @@ class EyeRecorder(context: Context, private val listener: Listener) {
                 ))) return
         }
         writer?.writeVideo(jpeg, tsUs, keyframe = true)
+        gyroLog?.setBase(tsUs) // the segment's t=0, same as the MKV's
     }
 
     private fun onHevcAu(au: HevcAccessUnitAssembler.AccessUnit) {
@@ -348,6 +361,7 @@ class EyeRecorder(context: Context, private val listener: Listener) {
             }
         }
         writer?.writeHevcAu(au.nals, au.timestampUs, au.isIrap)
+        gyroLog?.setBase(au.timestampUs)
     }
 
     private fun openHevcSegment(cfg: Config, csd: ByteArray): Boolean {
@@ -390,7 +404,38 @@ class EyeRecorder(context: Context, private val listener: Listener) {
         outputFile = out
         segmentStartElapsed = SystemClock.elapsedRealtime()
         Log.i(TAG, "Segment #$segmentIndex → ${out.location} (${video.width}x${video.height})")
+        if (cfg.gyroLog) openGyroLog(cfg, name)
         return true
+    }
+
+    /** The segment's `.gcsv`; a failure only costs the log, never the video. */
+    private fun openGyroLog(cfg: Config, videoName: String) {
+        try {
+            val side = output.createSidecar(cfg.storage, videoName)
+            gyroOut = side
+            gyroLog = GyroLog(Channels.newOutputStream(side.channel), videoName, System.currentTimeMillis() / 1000)
+            Log.i(TAG, "Gyro log → ${side.location}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not create the gyro log: ${e.message}")
+            gyroOut?.abort()
+            gyroOut = null
+        }
+    }
+
+    /** Closes the segment's gyro log: published when it has samples and [keep], else removed. */
+    private fun closeGyroLog(keep: Boolean) {
+        val g = gyroLog
+        val out = gyroOut
+        gyroLog = null
+        gyroOut = null
+        val any = g?.close() ?: false
+        if (keep && any) {
+            out?.finish()
+            Log.i(TAG, "Gyro log closed: ${out?.location} (${g?.lines} samples)")
+        } else {
+            out?.abort()
+            if (g != null) Log.i(TAG, "Gyro log dropped (no IMU samples — glasses IMU not streaming?)")
+        }
     }
 
     private fun segmentDue(cfg: Config): Boolean =
@@ -404,6 +449,7 @@ class EyeRecorder(context: Context, private val listener: Listener) {
         writerFormat = -1
         writerCsd = null
         sessionBytesClosed += w.bytesWritten
+        closeGyroLog(keep = w.videoFrames > 0)
         try {
             w.close()
             if (w.videoFrames == 0L) out?.abort() else {
@@ -425,6 +471,7 @@ class EyeRecorder(context: Context, private val listener: Listener) {
             sessionBytesClosed += w.bytesWritten
             try { w.close() } catch (_: Exception) {}
         }
+        closeGyroLog(keep = true)
         writer = null
         writerFormat = -1
         writerCsd = null

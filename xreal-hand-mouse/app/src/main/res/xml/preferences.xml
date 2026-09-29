@@ -99,6 +99,11 @@
         android:title="@string/pref_cat_gestures"
         android:dependency="hm_tracking_enabled">
         <SwitchPreferenceCompat
+            android:key="hm_gesture_hints"
+            android:defaultValue="true"
+            android:title="@string/pref_gesture_hints"
+            android:summary="@string/pref_gesture_hints_sum" />
+        <SwitchPreferenceCompat
             android:key="hm_magnetic_click"
             android:defaultValue="true"
             android:title="@string/pref_magnetic_click"
@@ -108,6 +113,11 @@
             android:defaultValue="false"
             android:title="@string/pref_debug_overlay"
             android:summary="@string/pref_debug_overlay_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_landmark_log"
+            android:defaultValue="false"
+            android:title="@string/pref_landmark_log"
+            android:summary="@string/pref_landmark_log_sum" />
         <SwitchPreferenceCompat
             android:key="hm_palm_menu"
             android:defaultValue="true"
@@ -119,14 +129,31 @@
             android:title="@string/pref_thumbs_up"
             android:summary="@string/pref_thumbs_up_sum" />
         <SwitchPreferenceCompat
+            android:key="hm_fist_touch"
+            android:defaultValue="false"
+            android:title="@string/pref_fist_touch"
+            android:summary="@string/pref_fist_touch_sum" />
+        <SwitchPreferenceCompat
             android:key="hm_fist_recenter"
-            android:defaultValue="true"
+            android:defaultValue="false"
             android:title="@string/pref_fist_recenter" />
         <SwitchPreferenceCompat
             android:key="hm_v_sign_voice"
             android:defaultValue="false"
             android:title="@string/pref_v_sign"
             android:summary="@string/pref_v_sign_sum" />
+        <SwitchPreferenceCompat
+            android:key="hm_head_comp"
+            android:defaultValue="false"
+            android:title="@string/pref_head_comp"
+            android:summary="@string/pref_head_comp_sum" />
+        <ListPreference
+            android:key="hm_dataset_label"
+            android:defaultValue="off"
+            android:entries="@array/dataset_label_entries"
+            android:entryValues="@array/dataset_label_values"
+            android:title="@string/pref_dataset_label"
+            android:summary="@string/pref_dataset_label_sum" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/pref_cat_recorder">
@@ -143,6 +170,20 @@
             android:entries="@array/rec_fps_entries"
             android:entryValues="@array/rec_fps_values"
             android:title="@string/pref_rec_fps"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="cam_anti_flicker"
+            android:defaultValue="-1"
+            android:entries="@array/cam_anti_flicker_entries"
+            android:entryValues="@array/cam_anti_flicker_values"
+            android:title="@string/pref_cam_anti_flicker"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            android:key="cam_exposure"
+            android:defaultValue="0"
+            android:entries="@array/cam_exposure_entries"
+            android:entryValues="@array/cam_exposure_values"
+            android:title="@string/pref_cam_exposure"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
             android:key="rec_audio"
@@ -165,6 +206,16 @@
             android:entryValues="@array/rec_storage_values"
             android:title="@string/pref_rec_storage"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            android:key="rec_gyro_log"
+            android:defaultValue="true"
+            android:title="@string/pref_rec_gyro_log"
+            android:summary="@string/pref_rec_gyro_log_sum" />
+        <SwitchPreferenceCompat
+            android:key="rec_enhance_delete_original"
+            android:defaultValue="true"
+            android:title="@string/pref_enhance_delete_original"
+            android:summary="@string/pref_enhance_delete_original_sum" />
         <SwitchPreferenceCompat
             android:key="rec_auto_start"
             android:defaultValue="false"

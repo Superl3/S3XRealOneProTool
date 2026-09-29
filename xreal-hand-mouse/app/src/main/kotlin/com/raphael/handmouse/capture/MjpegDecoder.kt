@@ -37,6 +37,13 @@ import java.io.FileOutputStream
  * reflete a posição atual da mão. Descartes são contados e logados a cada 100 (evita spam de log
  * mas registra que está acontecendo).
  *
+ * 2026-09-28: the dreno also takes only the NEWEST queued frame. It used to pop the oldest, which
+ * passed the throttle, and the newer frames behind it — popped a few ms later — were then
+ * rejected by the throttle interval: under backlog the stale frame won. Each frame also carries
+ * its ARRIVAL time (when [onAccessUnit] assembled it on the USB thread) instead of the time it
+ * was popped, so throttle, MediaPipe timestamps, filter dt and the latency HUD no longer include
+ * queue and decode delays.
+ *
  * ## FrameGate: throttle barato ANTES de decodificar
  * Antes de gastar CPU decodificando, o dreno consulta [FrameGate.shouldDecode]. Se retornar `false`
  * (o serviço integrador está limitando fps por temperatura/orçamento), o frame é descartado SEM
@@ -149,8 +156,10 @@ class MjpegDecoder(private val dumpDir: File? = null) {
 
     // --- Fila bounded (guardada por queueLock; produtor=USB, consumidor=decoder) ---
 
+    private class QueuedFrame(val data: ByteArray, val arrivedAtMs: Long)
+
     private val queueLock = Any()
-    private val queue = ArrayDeque<ByteArray>()
+    private val queue = ArrayDeque<QueuedFrame>()
     private var droppedFrames = 0L
 
     // --- Remontagem + contadores (thread USB apenas) ---
@@ -232,6 +241,7 @@ class MjpegDecoder(private val dumpDir: File? = null) {
         if (!draining || gaveUpOnStream) return
 
         val frames = streamAssembler.feed(data)
+        val arrivedAtMs = SystemClock.uptimeMillis()
 
         if (frames.isEmpty()) {
             // Desistência (ver GIVEUP_DISCARDED_BYTES): muito lixo sem UM frame sequer = o stream
@@ -261,12 +271,12 @@ class MjpegDecoder(private val dumpDir: File? = null) {
                 dumpedFrames++
                 decoderHandler?.post { dumpRawFrame(index, frame) }
             }
-            enqueue(frame)
+            enqueue(QueuedFrame(frame, arrivedAtMs))
         }
         decoderHandler?.post { drain() }
     }
 
-    private fun enqueue(data: ByteArray) {
+    private fun enqueue(data: QueuedFrame) {
         synchronized(queueLock) {
             while (queue.size >= MAX_QUEUE_SIZE) {
                 queue.removeFirst() // descarta o MAIS ANTIGO (ver Javadoc da classe)
@@ -279,19 +289,26 @@ class MjpegDecoder(private val dumpDir: File? = null) {
         }
     }
 
-    private fun pollQueue(): ByteArray? = synchronized(queueLock) { queue.removeFirstOrNull() }
+    /** Newest queued frame; older ones are dropped (see class Javadoc, 2026-09-28). */
+    private fun pollNewest(): QueuedFrame? = synchronized(queueLock) {
+        val newest = queue.removeLastOrNull() ?: return@synchronized null
+        if (queue.isNotEmpty()) {
+            droppedFrames += queue.size
+            queue.clear()
+        }
+        newest
+    }
 
     private fun drain() {
         if (!draining) return
         while (draining) {
-            val data = pollQueue() ?: break
-            val nowMs = SystemClock.uptimeMillis()
+            val frame = pollNewest() ?: break
             val gate = frameGate
-            if (gate != null && !gate.shouldDecode(nowMs)) {
+            if (gate != null && !gate.shouldDecode(frame.arrivedAtMs)) {
                 // Throttle: descarta SEM decodificar (a via barata por design — ver Javadoc).
                 continue
             }
-            decodeAndDeliver(data, nowMs)
+            decodeAndDeliver(frame.data, frame.arrivedAtMs)
         }
     }
 

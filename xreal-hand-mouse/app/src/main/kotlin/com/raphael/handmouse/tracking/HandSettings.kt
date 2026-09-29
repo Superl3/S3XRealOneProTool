@@ -21,7 +21,12 @@ data class HandSettings(
     val palmMenu: Boolean = true,
     val magneticClick: Boolean = true,
     val debugOverlay: Boolean = false,
-    val fistRecenter: Boolean = true,
+    /** Off by default since 2026-09-28: the fist is the fork's click, and holding it 2 s to
+     * recenter was rarely used (the user's call). */
+    val fistRecenter: Boolean = false,
+    /** Fist = touch down (2026-09-29): the fist presses and holds until it opens, instead of a
+     * tap when it closes. Off by default — the tap on close stays the fork's click. */
+    val fistTouch: Boolean = false,
     /** Thumbs-up 1 s toggles the cursor on/off (on by default — robust pose, no pinch needed). */
     val thumbsUpMute: Boolean = true,
     val vSignVoice: Boolean = false,
@@ -30,6 +35,11 @@ data class HandSettings(
     val worldPinch: Boolean = false,
     /** Hand travel to choose a direction (fraction of the camera image width). */
     val layerStep: Float = 0.045f,
+    /** Short "what to do next" line under the cursor during a gesture ([GestureHint]). */
+    val gestureHints: Boolean = true,
+    /** Remove head rotation from the hand position ([HeadMotionCompensator]); needs [headCalibration]. */
+    val headCompensation: Boolean = false,
+    val headCalibration: com.raphael.handmouse.imu.ImuCameraCalibration? = null,
 ) {
     companion object {
         const val PINCH_HYSTERESIS = 0.10f
@@ -54,6 +64,10 @@ data class HandSettings(
             layerStepThousandths: Int = 45,
             magneticClick: Boolean = true,
             debugOverlay: Boolean = false,
+            gestureHints: Boolean = true,
+            fistTouch: Boolean = false,
+            headCompensation: Boolean = false,
+            headCalibration: com.raphael.handmouse.imu.ImuCameraCalibration? = null,
         ): HandSettings {
             val sens = sensitivityPct.coerceIn(50, 200) / 100f
             val p = pinch.coerceIn(0, 100) / 100f
@@ -68,11 +82,15 @@ data class HandSettings(
                 palmMenu = palmMenu,
                 magneticClick = magneticClick,
                 debugOverlay = debugOverlay,
+                gestureHints = gestureHints,
                 fistRecenter = fistRecenter,
+                fistTouch = fistTouch,
                 thumbsUpMute = thumbsUpMute,
                 vSignVoice = vSignVoice,
                 worldPinch = worldPinch,
                 layerStep = layerStepThousandths.coerceIn(25, 100) / 1000f,
+                headCompensation = headCompensation,
+                headCalibration = headCalibration,
             )
         }
     }

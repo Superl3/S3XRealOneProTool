@@ -59,8 +59,13 @@ import com.raphael.handmouse.util.RadialDeadZone
  * âncora É a posição ao vivo do instante do pinch-down, e a divergência residual é só o quanto a
  * mão anda DURANTE o próprio gesto (~200-400ms) — pequena demais pra pagar a "congelada"
  * perceptível a cada clique (feedback do usuário, 2026-07-24). [renderCursor] agora segue a mão
- * ao vivo em TODAS as fases, sempre via dead-zone. Se o lookback voltar a subir um dia, o freeze
- * visual deve voltar junto (git: procurar CursorRenderDecision).
+ * ao vivo em TODAS as fases, sempre via dead-zone.
+ *
+ * 2026-09-28 correction: the lookback is back at 120ms ([CLICK_FREEZE_LOOKBACK_MS]) without the
+ * visual freeze, so a pinch click lands where the cursor was 120ms before the confirmed DOWN
+ * while the visible cursor keeps following the hand. [injectClick] marks the real click point
+ * ([CursorOverlay.pulseClickAt]) when it differs from the cursor. The fist click uses the
+ * position where the fingers started closing instead ([PositionHistory.fistOnset]).
  *
  * ## Drag órfão ao perder a mão (fix de revisão, achado Important I3b)
  * Antes deste fix, [onHandLost] resetava [clickDragStateMachine] (`phase` volta a `IDLE`) mas
@@ -116,6 +121,19 @@ class CursorPipeline(
         /** Use a pre-gesture position so closing fingers does not move the click target. */
         private const val CLICK_FREEZE_LOOKBACK_MS = 120L
 
+        /** Fist click is dropped when the cursor was moving faster than this (px/s) when the
+         * fingers started closing — a fist formed mid-sweep is a gesture transition, not an aimed
+         * click. 1200px/s is where [RelativeCursorMapper] leaves precision mode entirely (20px
+         * per 60fps frame), so aimed movement stays well below it. */
+        private const val FIST_CLICK_MAX_SPEED_PX_S = 1200f
+
+        /** Span before the fist onset used to measure the cursor speed for the check above. */
+        private const val FIST_CLICK_SPEED_SPAN_MS = 100L
+
+        /** A pinch shows its "release = tap / move = drag" hint only once held this long, so a
+         * quick tap does not flash text under the cursor. */
+        private const val PINCH_HINT_DELAY_MS = 200L
+
         /** Punho fechado segurado por este tempo recentraliza o cursor (2026-07-23, pedido do
          * usuário — o modo relativo perde a correspondência mão↔centro com o tempo; ver
          * [FistDetector] e [RelativeCursorMapper.recenter]). */
@@ -125,6 +143,14 @@ class CursorPipeline(
          * usuário: "quando abaixo os braços o cursor fica perdido e visível" — ver
          * [ThumbsUpDetector] e a spec `2026-07-23-cursor-mute-gesture-design.md`). */
         private const val THUMBS_UP_TOGGLE_HOLD_MS = 1000L
+
+        /** Fist touch-down mode: the press stays pinned until the hand has moved this far (px,
+         * like ultraleap TouchFree's grab drag threshold), so the knuckle shift of a held fist
+         * does not turn a press into a drag. */
+        private const val FIST_TOUCH_SLOP_PX = 28f
+
+        /** A "not ready" hint stays up this long after it blocked a pinch or fist. */
+        private const val NOT_READY_HINT_MS = 800L
 
         /** Sinal de "V" segurado por este tempo abre a escuta de voz (2026-07-23, spec
          * voice-control). Curto de propósito (o debounce de ~200ms do detector já filtra
@@ -148,12 +174,21 @@ class CursorPipeline(
     // ---- Eye Tools fork: user settings (applied on the main thread, same as onHandResult) ----
     private var settings = HandSettings()
 
+    /** Head rotation removed from the hand position (2026-09-29, off by default). */
+    private val headMotion = HeadMotionCompensator()
+
+    /** The capture service's gyro history ([EyeCaptureService.gyroHistory]); null = no IMU. */
+    var gyroHistory: com.raphael.handmouse.imu.GyroHistory?
+        get() = headMotion.gyro
+        set(value) { headMotion.gyro = value }
+
     /** Applies the settings screen values to every pipeline component (live, no restart). */
     fun applySettings(newSettings: HandSettings) {
         // Switching between world/normalized ratios must not mix pinch EMAs; any other change
         // leaves a pinch/drag in progress alone.
         if (newSettings.worldPinch != settings.worldPinch) onHandLost()
         settings = newSettings
+        headMotion.calibration = if (newSettings.headCompensation) newSettings.headCalibration else null
         relativeMapper.spanX = newSettings.spanX
         oneEuroX.minCutoff = newSettings.minCutoff
         oneEuroY.minCutoff = newSettings.minCutoff
@@ -193,6 +228,27 @@ class CursorPipeline(
     private val dragYFilter = OneEuroFilter(minCutoff = 0.4f, beta = 0.003f)
     private var filteredDragPosition: Pair<Float, Float>? = null
     private var lastClickTarget: CursorPoint? = null
+
+    // Fist click planned when its ring starts (2026-09-28): the tap point (after magnetic snap)
+    // is shown as a preview and used as-is on confirm — what the user sees is where it lands.
+    private class FistPlan(val target: CursorPoint?, val dropped: Boolean)
+    private var fistPlan: FistPlan? = null
+    private var fistWasPending = false
+    private var pinchDownAtMs = 0L
+
+    // Fist touch-down mode (setting, 2026-09-29): a confirmed fist presses at the planned point
+    // and holds the touch until the fist opens. [handX]/[handY]: live cursor where the drag is
+    // measured from (re-based when the slop is crossed, so the press point does not jump).
+    private class FistTouch(val anchorX: Float, val anchorY: Float, var handX: Float, var handY: Float) {
+        var dragging = false
+        var x = anchorX
+        var y = anchorY
+    }
+    private var fistTouch: FistTouch? = null
+
+    // "Not ready" ([HandReadiness]): when it last blocked a pinch press or a fist.
+    private var notReadyBlockedAtMs: Long? = null
+    private var notReadyReason: HandReadiness.Reason? = null
 
     // Mute do cursor por thumbs-up (2026-07-23) — ver [updateThumbsUpState]. cursorMuted
     // persiste até o gesto explícito de religar (onHandLost NÃO desfaz — é exatamente o cenário
@@ -234,11 +290,20 @@ class CursorPipeline(
     override fun onHandResult(result: HandTracker.Result) {
         val currentBounds = bounds ?: return // sem display do DeX -> nada a mover/injetar
 
-        val points = result.points
+        // Isotropic landmarks: every distance/ratio below is direction-independent (see
+        // [HandTracker.Result.isoPoints]).
+        val points = result.isoPoints
+        val t = result.timestampMs
 
         // Pinch ratios from metric world landmarks when available (robust to hand rotation —
-        // normalized-image z is a rough estimate), else from the normalized landmarks.
+        // normalized-image z is a rough estimate), else from the isotropic landmarks.
         val pinchPoints = if (settings.worldPinch && result.worldLandmarks.size == 21) result.worldLandmarks else points
+
+        // Finger measurements shared by the pose detectors, and whether the hand is reliable
+        // enough to START a pinch or fist (2026-09-29 — [HandFeatures], [HandReadiness]).
+        val features = HandFeatures.from(points)
+        notReadyReason = HandReadiness.notReadyReason(result.points, result.handedness.firstOrNull()?.score())
+        val ready = notReadyReason == null
 
         // ---- Mute por thumbs-up (2026-07-23): PRIMEIRO de tudo, e único caminho vivo quando
         // mutado ----
@@ -247,9 +312,12 @@ class CursorPipeline(
         // zero palma/pinch/punho/movimento/injeção — o pipeline vira só o "ouvido" pro gesto de
         // religar. Estados dos outros detectores ficam obsoletos de propósito (o unmute reseta
         // tudo — ver [toggleCursorMuted]).
-        if (settings.thumbsUpMute) updateThumbsUpState(points, result.timestampMs)
+        if (settings.thumbsUpMute) updateThumbsUpState(features, t)
         if (cursorMuted) {
-            showDebug(points, result, null, "MUTED")
+            overlay.setFistProgress(0f)
+            clearFistPlan()
+            showHint(null)
+            showDebug(result, pinchPoints, null, "MUTED")
             return
         }
 
@@ -257,26 +325,33 @@ class CursorPipeline(
         // Durante a escuta o frame acaba aqui: âncora solta (sem salto na volta — mesmo clutch
         // do modo palma), pinch suprimido, cursor parado. A mão fica livre pra ficar à vontade
         // enquanto o usuário FALA (inclusive abaixá-la — a escuta não depende mais do gesto).
-        if (settings.vSignVoice) updateVSignState(points, result.timestampMs)
+        if (settings.vSignVoice) updateVSignState(features, t)
         if (voiceController?.isListening == true) {
             relativeMapper.onHandLost()
             palmReference.reset()
             pinchDetector.reset()
             overlay.setPinched(false)
-            showDebug(points, result, null, "VOICE")
+            overlay.setFistProgress(0f)
+            clearFistPlan()
+            closeMenuIfOpen()
+            showHint(GestureHint.LISTENING)
+            showDebug(result, pinchPoints, null, "VOICE")
             return
         }
 
         // A stationary long pinch opens the menu. While it is open, only the displacement from
         // its opening position matters; the normal cursor mapping is paused.
         if (layeredMenu.isActive) {
-            val event = pinchDetector.update(pinchPoints)
+            val event = pinchDetector.update(pinchPoints, t)
             if (event == PinchEvent.UP && menuAwaitRelease) {
                 menuAwaitRelease = false
-                clickDragStateMachine.pinchUp(result.timestampMs)
+                clickDragStateMachine.pinchUp(t)
             }
-            val fist = fistDetector.update(points)
-            if (fist || result.timestampMs - menuOpenedAtMs > 8_000L) {
+            val fist = fistDetector.update(features, t)
+            overlay.setFistProgress(0f)
+            clearFistPlan()
+            showHint(GestureHint.MENU)
+            if (fist || t - menuOpenedAtMs > 8_000L) {
                 if (fist) {
                     lastLoggedFist = true
                     fistReleasePending = true
@@ -286,28 +361,39 @@ class CursorPipeline(
                 clickDragStateMachine.reset()
             } else {
                 val confirm = !menuAwaitRelease && event == PinchEvent.DOWN
-                handleMenuFrame(layeredMenu.onPalmOpen(points[5].x, points[5].y, confirm), currentBounds)
+                handleMenuFrame(layeredMenu.onPalmOpen(points[5].x, points[5].y, confirm, t), currentBounds)
             }
             relativeMapper.onHandLost()
             palmReference.reset()
             overlay.setPinched(false)
-            showDebug(points, result, null, "MENU")
+            showDebug(result, pinchPoints, null, "MENU")
             return
         }
 
-        val ref = palmReference.update(points, result.timestampMs)
-        val mapped = relativeMapper.map(ref.x, ref.y, currentBounds)
-        val fx = oneEuroX.filter(mapped.x, result.timestampMs)
-        val fy = oneEuroY.filter(mapped.y, result.timestampMs)
+        val aspect = if (result.imageWidth > 0) result.imageHeight.toFloat() / result.imageWidth else 9f / 16f
+        val ref = palmReference.update(headMotion.compensate(points, t, aspect), t)
+        val mapped = relativeMapper.map(ref.x, ref.y, currentBounds, t)
+        val fx = oneEuroX.filter(mapped.x, t)
+        val fy = oneEuroY.filter(mapped.y, t)
         lastLivePosition = fx to fy // achado I3b — ver Javadoc da classe ("Drag órfão")
+
+        // Fist state first, so its curl goes into the same history sample (fist click position).
+        val fistMayStart = PoseArbiter.mayStart(HandPose.FIST, activePoses())
+        val isFist = fistDetector.update(features, t, allowEnter = ready && fistMayStart)
+        if (!ready && fistMayStart && !isFist && features.maxCurl < FistDetector.ENTER_THRESHOLD) notReadyBlockedAtMs = t
 
         // Ver Javadoc da classe ("Congelamento de posição") sobre por que isto roda ANTES da
         // dead-zone e é usado tanto pro clique/drag quanto pro histórico de congelamento.
-        positionHistory.record(fx, fy, result.timestampMs)
+        positionHistory.record(fx, fy, t, fistDetector.curl)
 
         // Punho fechado: suprime o pinch (num punho o polegar encosta no indicador e o
-        // PinchDetector confundiria com clique) e, segurado FIST_RECENTER_HOLD_MS, recentraliza.
-        val fistSuppressesPinch = updateFistState(points, result.timestampMs, currentBounds)
+        // PinchDetector confundiria com clique), clica e, segurado FIST_RECENTER_HOLD_MS, recentraliza.
+        val fistSuppressesPinch = updateFistState(isFist, t, currentBounds)
+        val fistPending = !isFist && fistDetector.enterProgress > 0f
+        val fistAbandoned = fistWasPending && !fistPending && !isFist
+        fistWasPending = fistPending
+        val fistRingShown = updateFistPlan(fistPending, fistAbandoned, t, currentBounds)
+        overlay.setFistProgress(if (fistRingShown) fistDetector.enterProgress else 0f)
         if (!fistSuppressesPinch && fistReleasePending) {
             if (PinchDetector.ratio(pinchPoints) > pinchDetector.exitThreshold + 0.08f) {
                 fistReleasePending = false
@@ -316,32 +402,97 @@ class CursorPipeline(
             }
         }
 
-        val pinchEvent = when {
+        val rawPinchEvent = when {
             fistSuppressesPinch || fistReleasePending -> null
-            else -> pinchDetector.update(pinchPoints)
+            else -> pinchDetector.update(pinchPoints, t)
+        }
+        // 2026-09-28: while a fist forms, the thumb touching the index reads as a pinch, and the
+        // ring's "open the hand to cancel" must cancel everything. A pending fist holds back a
+        // pinch press; abandoning the fist, or releasing the pinch during it, drops the press.
+        val pressed = clickDragStateMachine.phase == ClickDragStateMachine.Phase.PRESSED
+        val pinchEvent = when {
+            fistPending && rawPinchEvent == PinchEvent.DOWN -> {
+                pinchDetector.reset()
+                null
+            }
+            // 2026-09-29: a thumbs-up or V owns the hand ([PoseArbiter]), or the hand is not
+            // ready ([HandReadiness]) — no new press; it can start once the block lifts.
+            rawPinchEvent == PinchEvent.DOWN && (!ready || !PoseArbiter.mayStart(HandPose.PINCH, activePoses())) -> {
+                if (!ready) notReadyBlockedAtMs = t
+                pinchDetector.reset()
+                null
+            }
+            pressed && (fistAbandoned || (fistPending && rawPinchEvent == PinchEvent.UP)) -> {
+                Log.d(TAG, "Pinch press dropped together with the abandoned fist")
+                clickDragStateMachine.reset()
+                pinchDetector.reset()
+                null
+            }
+            else -> rawPinchEvent
         }
         overlay.setPinched(!fistSuppressesPinch && pinchDetector.isPinched)
 
         val actions = when (pinchEvent) {
             PinchEvent.DOWN -> {
-                val frozen = positionHistory.positionAt(result.timestampMs - CLICK_FREEZE_LOOKBACK_MS)
+                val frozen = positionHistory.positionAt(t - CLICK_FREEZE_LOOKBACK_MS)
                 val frozenX = frozen?.x ?: fx
                 val frozenY = frozen?.y ?: fy
-                clickDragStateMachine.pinchDown(frozenX, frozenY, result.timestampMs)
+                pinchDownAtMs = t
+                clickDragStateMachine.pinchDown(frozenX, frozenY, t)
             }
-            PinchEvent.UP -> clickDragStateMachine.pinchUp(result.timestampMs)
-            null -> clickDragStateMachine.positionUpdate(fx, fy, result.timestampMs)
+            PinchEvent.UP -> clickDragStateMachine.pinchUp(t)
+            null -> clickDragStateMachine.positionUpdate(fx, fy, t)
         }
         // Ver "Supressão de injeção" no Javadoc da classe (achado I4): a máquina de estados e o
         // overlay (setPinched acima, moveTo abaixo) continuam rodando incondicionalmente durante
         // a supressão — só o clique/drag REAL (e o pulso de clique confirmado) pausa.
         if (!injectionSuppressed) {
-            dispatchActions(actions, currentBounds, points[5], result.timestampMs)
+            dispatchActions(actions, currentBounds, points[5], t)
         }
 
         val visiblePosition = filteredDragPosition ?: (fx to fy)
         renderCursor(visiblePosition.first, visiblePosition.second)
-        showDebug(points, result, visiblePosition, clickDragStateMachine.phase.name)
+        showHint(normalHint(fistRingShown, t))
+        showDebug(result, pinchPoints, visiblePosition, if (fistTouch != null) "FIST_TOUCH" else clickDragStateMachine.phase.name)
+    }
+
+    /** Poses currently holding the hand, for [PoseArbiter]. A detector whose gesture is turned
+     * off is not updated, so its last state does not count. */
+    private fun activePoses(): Set<HandPose> = buildSet {
+        if (settings.thumbsUpMute && thumbsUpDetector.isActive) add(HandPose.THUMBS_UP)
+        if (settings.vSignVoice && vSignDetector.isVSign) add(HandPose.V_SIGN)
+        if (fistDetector.isFist) add(HandPose.FIST)
+        if (pinchDetector.isPinched) add(HandPose.PINCH)
+    }
+
+    /** What to do next in the normal (non-menu, non-voice) path — see [GestureHint]. */
+    private fun normalHint(fistRingShown: Boolean, timestampMs: Long): GestureHint? {
+        val phase = clickDragStateMachine.phase
+        val blockedAt = notReadyBlockedAtMs
+        return when {
+            fistTouch != null -> GestureHint.FIST_PRESSED
+            phase == ClickDragStateMachine.Phase.DRAGGING -> GestureHint.DRAGGING
+            fistRingShown -> if (settings.fistTouch) GestureHint.FIST_PENDING_TOUCH else GestureHint.FIST_PENDING
+            blockedAt != null && timestampMs - blockedAt < NOT_READY_HINT_MS && notReadyReason != null ->
+                if (notReadyReason == HandReadiness.Reason.EDGE) GestureHint.NOT_READY_EDGE else GestureHint.NOT_READY
+            phase == ClickDragStateMachine.Phase.PRESSED && timestampMs - pinchDownAtMs >= PINCH_HINT_DELAY_MS ->
+                if (settings.palmMenu) GestureHint.PINCH_PRESSED else GestureHint.PINCH_PRESSED_NO_MENU
+            thumbsUpHoldStartMs != null && !thumbsUpToggleFired -> GestureHint.THUMBS_UP
+            vSignHoldStartMs != null && !vSignFired -> GestureHint.V_SIGN
+            else -> null
+        }
+    }
+
+    private fun showHint(hint: GestureHint?) {
+        overlay.setHint(if (settings.gestureHints) hint else null)
+    }
+
+    /** The menu is modal: entering mute or voice from it must not leave it frozen on screen. */
+    private fun closeMenuIfOpen() {
+        if (!layeredMenu.isActive) return
+        layeredMenu.reset()
+        overlay.hidePalmMenu()
+        clickDragStateMachine.reset()
     }
 
     /**
@@ -352,14 +503,15 @@ class CursorPipeline(
      * - Dispara UMA vez por hold ([thumbsUpToggleFired]); soltar o gesto rearma.
      * - Transições de estado do detector são logadas (mesmo padrão palma/punho).
      */
-    private fun updateThumbsUpState(points: List<HandPoint>, timestampMs: Long) {
-        val active = thumbsUpDetector.update(points)
+    private fun updateThumbsUpState(features: HandFeatures, timestampMs: Long) {
+        val active = thumbsUpDetector.update(features, timestampMs, PoseArbiter.mayStart(HandPose.THUMBS_UP, activePoses()))
         if (active != lastLoggedThumbsUp) {
             lastLoggedThumbsUp = active
             Log.d(TAG, "Thumbs-up ${if (active) "ATIVO (segure ${THUMBS_UP_TOGGLE_HOLD_MS}ms pra alternar o mute)" else "inativo"}")
         }
 
         if (!active || (!cursorMuted && clickDragStateMachine.phase != ClickDragStateMachine.Phase.IDLE) ||
+            layeredMenu.isActive || // 2026-09-28: the menu is modal — muting from it left it frozen on screen
             voiceController?.isListening == true // fix de revisão final 2026-07-23: um "joia" casual segurado enquanto o usuário FALA não pode mutar o cursor no meio da sessão de voz
         ) {
             thumbsUpHoldStartMs = null
@@ -381,6 +533,9 @@ class CursorPipeline(
         cursorMuted = !cursorMuted
         if (cursorMuted) {
             overlay.setPinched(false)
+            closeMenuIfOpen()
+            clearFistPlan()
+            overlay.setHint(null)
             overlay.setHiddenByUser(true)
             Log.d(TAG, "Cursor MUTADO (thumbs-up ${THUMBS_UP_TOGGLE_HOLD_MS}ms) — thumbs-up de novo religa")
         } else {
@@ -420,14 +575,14 @@ class CursorPipeline(
      * O trigger dispara UMA vez por hold ([fistRecenterFired]) — segurar além de 2s não fica
      * recentralizando em loop; soltar o punho rearma.
      */
-    private fun updateFistState(points: List<HandPoint>, timestampMs: Long, display: DisplayBounds): Boolean {
-        val isFist = fistDetector.update(points)
+    private fun updateFistState(isFist: Boolean, timestampMs: Long, display: DisplayBounds): Boolean {
         val justClosed = isFist && !lastLoggedFist
         if (isFist != lastLoggedFist) {
             lastLoggedFist = isFist
             Log.d(TAG, "Punho ${if (isFist) "ATIVO — pinch suprimido (2s segura = recentraliza)" else "inativo"}")
         }
         if (!isFist) {
+            releaseFistTouch()
             fistHoldStartMs = null
             fistRecenterFired = false
             return false
@@ -447,13 +602,16 @@ class CursorPipeline(
         fistReleasePending = true
 
         if (justClosed && !injectionSuppressed && phaseBeforeFist != ClickDragStateMachine.Phase.MENU_OPEN) {
-            val anchor = positionHistory.positionAt(timestampMs - 180L)
-            val (x, y) = anchor?.let { it.x to it.y } ?: lastLivePosition
-            injectClick(x, y, display)
+            if (settings.fistTouch) fistTouchDown(timestampMs, display) else fistClick(timestampMs, display)
+        } else if (justClosed) {
+            clearFistPlan()
+        } else {
+            updateFistTouch(timestampMs, display)
         }
 
+        // Recentering would move the cursor under a held touch, so touch mode turns it off.
         val start = fistHoldStartMs ?: timestampMs.also { fistHoldStartMs = it }
-        if (settings.fistRecenter && !fistRecenterFired && timestampMs - start >= FIST_RECENTER_HOLD_MS) {
+        if (settings.fistRecenter && !settings.fistTouch && !fistRecenterFired && timestampMs - start >= FIST_RECENTER_HOLD_MS) {
             fistRecenterFired = true
             relativeMapper.recenter()
             palmReference.reset()
@@ -467,6 +625,116 @@ class CursorPipeline(
     }
 
     /**
+     * Fist click (the fork's primary click for hard-to-hit targets), fired once when a fist is
+     * confirmed. 2026-09-28:
+     * - Position: where the fingers STARTED closing ([PositionHistory.fistOnset]). The fist only
+     *   confirms after the enter debounce (~225ms) plus the closing motion, and closing shifts
+     *   the knuckles the cursor follows; the old fixed 180ms lookback landed mid-closure.
+     * - A fist formed while the cursor was sweeping faster than [FIST_CLICK_MAX_SPEED_PX_S] is a
+     *   gesture transition, not an aimed click — dropped.
+     */
+    private fun fistClick(timestampMs: Long, display: DisplayBounds) {
+        val plan = fistPlan ?: planFistClick(timestampMs, display)
+        clearFistPlan()
+        val target = plan.target ?: return // dropped by the speed check
+        tapAt(target, display)
+    }
+
+    /**
+     * Fist touch-down mode (setting, 2026-09-29, after ultraleap TouchFree's grab interaction):
+     * the confirmed fist presses at the planned point (same plan and speed check as [fistClick])
+     * and the touch is held until the fist opens — a quick fist is a tap, a held one a long
+     * press, and moving the closed hand drags.
+     */
+    private fun fistTouchDown(timestampMs: Long, display: DisplayBounds) {
+        val plan = fistPlan ?: planFistClick(timestampMs, display)
+        clearFistPlan()
+        val target = plan.target ?: return // dropped by the speed check
+        val (hx, hy) = lastLivePosition
+        fistTouch = FistTouch(target.x, target.y, hx, hy)
+        dragXFilter.reset()
+        dragYFilter.reset()
+        dragXFilter.filter(target.x, timestampMs)
+        dragYFilter.filter(target.y, timestampMs)
+        filteredDragPosition = target.x to target.y
+        Log.d(TAG, "Fist touch down (${target.x}, ${target.y}) display=${display.displayId}")
+        gestureInjector.beginDrag(target.x, target.y, display.displayId)
+        overlay.pulseClickAt(target.x, target.y)
+    }
+
+    /** Held fist touch: pinned at the press point until the cursor has moved
+     * [FIST_TOUCH_SLOP_PX], then follows the hand from there. Frames where the fingers are
+     * already opening (curl above the fist entry threshold, before the exit confirms) hold the
+     * position, so opening the hand does not shift the release point. The injector gets a
+     * segment every frame either way — a still touch needs them too (see [GestureInjector]). */
+    private fun updateFistTouch(timestampMs: Long, display: DisplayBounds) {
+        val touch = fistTouch ?: return
+        val (hx, hy) = lastLivePosition
+        if (fistDetector.curl < FistDetector.ENTER_THRESHOLD) {
+            if (!touch.dragging && kotlin.math.hypot(hx - touch.handX, hy - touch.handY) > FIST_TOUCH_SLOP_PX) {
+                touch.dragging = true
+                touch.handX = hx
+                touch.handY = hy
+            }
+            if (touch.dragging) {
+                touch.x = (touch.anchorX + hx - touch.handX).coerceIn(0f, display.width - 1f)
+                touch.y = (touch.anchorY + hy - touch.handY).coerceIn(0f, display.height - 1f)
+            }
+        }
+        val x = dragXFilter.filter(touch.x, timestampMs)
+        val y = dragYFilter.filter(touch.y, timestampMs)
+        filteredDragPosition = x to y
+        gestureInjector.updateDrag(x, y)
+    }
+
+    /** Ends a held fist touch at its unfiltered position (the pinned point when it never moved). */
+    private fun releaseFistTouch() {
+        val touch = fistTouch ?: return
+        fistTouch = null
+        Log.d(TAG, "Fist touch up (${touch.x}, ${touch.y}) dragged=${touch.dragging}")
+        gestureInjector.endDrag(touch.x, touch.y)
+        dragXFilter.reset()
+        dragYFilter.reset()
+        filteredDragPosition = null
+    }
+
+    /** Plans the fist click once, when its ring starts, and returns whether the ring is shown:
+     * not during a drag (fist does not interfere there), with injection suppressed, or when the
+     * speed check already dropped the click — the ring promises a tap. */
+    private fun updateFistPlan(pending: Boolean, abandoned: Boolean, timestampMs: Long, display: DisplayBounds): Boolean {
+        if (abandoned) clearFistPlan()
+        if (!pending || injectionSuppressed) return false
+        if (clickDragStateMachine.phase == ClickDragStateMachine.Phase.DRAGGING) return false
+        val plan = fistPlan ?: planFistClick(timestampMs, display).also { p ->
+            fistPlan = p
+            p.target?.let { overlay.showClickPreview(it.x, it.y) }
+        }
+        return !plan.dropped
+    }
+
+    private fun planFistClick(timestampMs: Long, display: DisplayBounds): FistPlan {
+        val onset = positionHistory.fistOnset(timestampMs, FistDetector.ENTER_THRESHOLD)
+            ?: return FistPlan(resolveClickTarget(lastLivePosition.first, lastLivePosition.second, display), dropped = false)
+        val before = positionHistory.positionAt(onset.timestampMs - FIST_CLICK_SPEED_SPAN_MS)
+        if (before != null && before.timestampMs < onset.timestampMs) {
+            val speed = kotlin.math.hypot(onset.x - before.x, onset.y - before.y) * 1000f /
+                (onset.timestampMs - before.timestampMs)
+            if (speed > FIST_CLICK_MAX_SPEED_PX_S) {
+                Log.d(TAG, "Fist click dropped: cursor moving %.0f px/s when the fist started".format(speed))
+                return FistPlan(null, dropped = true)
+            }
+        }
+        Log.d(TAG, "Fist click planned at the onset ${timestampMs - onset.timestampMs}ms back")
+        return FistPlan(resolveClickTarget(onset.x, onset.y, display), dropped = false)
+    }
+
+    private fun clearFistPlan() {
+        if (fistPlan == null) return
+        fistPlan = null
+        overlay.hideClickPreview()
+    }
+
+    /**
      * Gesto de sinal de "V" (2026-07-23, spec voice-control): segurar [V_SIGN_HOLD_MS] abre a
      * janela de escuta do [voiceController]. Regras (mesmo molde do punho/thumbs-up):
      * - Só com a máquina de clique em IDLE (nunca no meio de clique/drag).
@@ -474,14 +742,16 @@ class CursorPipeline(
      * - Suprimido com injectionSuppressed (wizard de calibração) e sem bounds (sem display).
      * - Transições logadas (mesmo padrão palma/punho/thumbs-up).
      */
-    private fun updateVSignState(points: List<HandPoint>, timestampMs: Long) {
-        val active = vSignDetector.update(points)
+    private fun updateVSignState(features: HandFeatures, timestampMs: Long) {
+        val active = vSignDetector.update(features, timestampMs, PoseArbiter.mayStart(HandPose.V_SIGN, activePoses()))
         if (active != lastLoggedVSign) {
             lastLoggedVSign = active
             Log.d(TAG, "Sinal de V ${if (active) "ATIVO (segure ${V_SIGN_HOLD_MS}ms pra falar)" else "inativo"}")
         }
 
-        if (!active || clickDragStateMachine.phase != ClickDragStateMachine.Phase.IDLE) {
+        if (!active || clickDragStateMachine.phase != ClickDragStateMachine.Phase.IDLE ||
+            layeredMenu.isActive // 2026-09-28: modal menu (see updateThumbsUpState)
+        ) {
             vSignHoldStartMs = null
             vSignFired = false
             return
@@ -520,6 +790,10 @@ class CursorPipeline(
     override fun onHandLost() {
         layeredMenu.reset()
         overlay.hidePalmMenu()
+        overlay.setFistProgress(0f)
+        clearFistPlan()
+        fistWasPending = false
+        overlay.setHint(null)
         // Achado I3b — ver "Drag órfão ao perder a mão" no Javadoc da classe: encerra um drag em
         // andamento ANTES de resetar clickDragStateMachine (reset() apaga phase, precisamos ler
         // ANTES). Sem injectionSuppressed checado aqui de propósito — se a mão some no meio de um
@@ -530,6 +804,8 @@ class CursorPipeline(
             Log.w(TAG, "onHandLost durante DRAGGING — encerrando drag em ($x, $y)")
             gestureInjector.endDrag(x, y)
         }
+        releaseFistTouch() // same for a held fist touch
+        notReadyBlockedAtMs = null
         dragXFilter.reset()
         dragYFilter.reset()
         filteredDragPosition = null
@@ -611,35 +887,47 @@ class CursorPipeline(
                 is ClickDragStateMachine.Action.OpenMenu -> {
                     menuAwaitRelease = pinchDetector.isPinched
                     menuOpenedAtMs = timestampMs
-                    handleMenuFrame(layeredMenu.onPalmOpen(hand.x, hand.y, false), display)
+                    handleMenuFrame(layeredMenu.onPalmOpen(hand.x, hand.y, false, timestampMs), display)
                 }
             }
         }
     }
 
     private fun injectClick(x: Float, y: Float, display: DisplayBounds) {
-        val target = if (settings.magneticClick) clickTargetResolver?.resolve(x, y, display) else null
-        lastClickTarget = target
-        val tx = target?.x ?: x
-        val ty = target?.y ?: y
-        Log.d(TAG, "Click (${x}, ${y}) -> (${tx}, ${ty}) display=${display.displayId}")
-        gestureInjector.tap(tx, ty, display.displayId)
-        overlay.pulseClick()
+        tapAt(resolveClickTarget(x, y, display), display)
     }
 
+    /** Magnetic click: the nearby accessible control for ([x], [y]), else the point itself. */
+    private fun resolveClickTarget(x: Float, y: Float, display: DisplayBounds): CursorPoint {
+        val snapped = if (settings.magneticClick) clickTargetResolver?.resolve(x, y, display) else null
+        lastClickTarget = snapped
+        if (snapped != null) Log.d(TAG, "Click target ($x, $y) -> (${snapped.x}, ${snapped.y})")
+        return snapped ?: CursorPoint(x, y)
+    }
+
+    private fun tapAt(target: CursorPoint, display: DisplayBounds) {
+        Log.d(TAG, "Click (${target.x}, ${target.y}) display=${display.displayId}")
+        gestureInjector.tap(target.x, target.y, display.displayId)
+        overlay.pulseClickAt(target.x, target.y)
+    }
+
+    /** [pinchPoints]: the landmarks the pinch detector actually uses (world or isotropic), so
+     * the shown ratio is the one compared against the thresholds. The skeleton and palm values
+     * are in image coordinates ([HandTracker.Result.points]). */
     private fun showDebug(
-        points: List<HandPoint>,
         result: HandTracker.Result,
+        pinchPoints: List<HandPoint>,
         cursor: Pair<Float, Float>?,
         state: String,
     ) {
         if (!settings.debugOverlay) return
+        val points = result.points
         val ref = if (points.size >= 18) listOf(5, 9, 13, 17) else emptyList()
         val palmX = if (ref.isEmpty()) 0f else ref.map { points[it].x }.average().toFloat()
         val palmY = if (ref.isEmpty()) 0f else ref.map { points[it].y }.average().toFloat()
         overlay.updateHandDebug(points, listOf(
             "HAND ${"%.0f".format(result.inferenceFps)} fps",
-            "pinch ${pinchDetector.isPinched} (%.2f)".format(PinchDetector.ratio(points)),
+            "pinch ${pinchDetector.isPinched} (%.2f)".format(PinchDetector.ratio(pinchPoints)),
             "fist ${fistDetector.isFist}",
             "state $state",
             "palm %.3f / %.3f".format(palmX, palmY),

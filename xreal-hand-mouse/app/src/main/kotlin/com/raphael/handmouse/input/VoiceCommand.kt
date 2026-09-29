@@ -12,6 +12,8 @@ sealed class VoiceCommand {
     object Back : VoiceCommand()
     object Home : VoiceCommand()
     object Recents : VoiceCommand()
+    /** Close the DeX app window under the cursor — same action as the palm menu's "창 닫기". */
+    object CloseApp : VoiceCommand()
     object SendEnter : VoiceCommand()
     object ClearText : VoiceCommand()
     data class OpenApp(val query: String) : VoiceCommand()
@@ -37,13 +39,15 @@ object VoiceCommandParser {
         "뒤로" to VoiceCommand.Back,
         "back" to VoiceCommand.Back,
         "홈" to VoiceCommand.Home,
-        "닫기" to VoiceCommand.Home,
+        "닫기" to VoiceCommand.CloseApp,
+        "창 닫기" to VoiceCommand.CloseApp,
         "home" to VoiceCommand.Home,
         "최근 앱" to VoiceCommand.Recents,
         "최근앱" to VoiceCommand.Recents,
         "recents" to VoiceCommand.Recents,
-        // "Close" and "닫기" return Home; Android cannot close another app directly.
-        "close" to VoiceCommand.Home,
+        // 2026-09-28: "닫기"/"close" used to go Home ("Android cannot close another app"), while
+        // the palm menu already closed the window via its caption button (WindowController).
+        "close" to VoiceCommand.CloseApp,
         "전송" to VoiceCommand.SendEnter,
         "send" to VoiceCommand.SendEnter,
         "모두 지우기" to VoiceCommand.ClearText,

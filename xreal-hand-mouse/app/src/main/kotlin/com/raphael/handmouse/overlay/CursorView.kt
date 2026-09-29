@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -39,6 +40,8 @@ class CursorView(context: Context, attrs: AttributeSet? = null) : View(context, 
 
     private var pinched = false
     private var listening = false
+    /** Pending fist click, 0..1 (0 = no ring) — see [setFistProgress]. */
+    private var fistProgress = 0f
     /** Fix de revisão 2026-07-23: setPinched durante os 400ms do flash truncava o flash — a
      * cor-base só pode voltar quando o flash termina ou é cancelado por setListening. */
     private var flashing = false
@@ -60,6 +63,13 @@ class CursorView(context: Context, attrs: AttributeSet? = null) : View(context, 
         color = Color.argb(110, 0, 0, 0)
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.CYAN
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = 2.5f * context.resources.displayMetrics.density
+    }
+    private val ringBounds = RectF()
 
     init {
         pivotX = sizePx / 2f
@@ -73,6 +83,15 @@ class CursorView(context: Context, attrs: AttributeSet? = null) : View(context, 
         if (!flashing) fillPaint.color = baseFillColor() // flash em voo termina os 400ms dele
         scaleX = if (isPinched) 1.25f else 1f
         scaleY = if (isPinched) 1.25f else 1f
+        invalidate()
+    }
+
+    /** Ring around the pointer that fills while a fist click is pending (2026-09-28): the user
+     * sees the click coming and can cancel it by opening the hand before the ring closes. */
+    fun setFistProgress(progress: Float) {
+        val p = progress.coerceIn(0f, 1f)
+        if (kotlin.math.abs(p - fistProgress) < 0.02f && (p == 0f) == (fistProgress == 0f)) return
+        fistProgress = p
         invalidate()
     }
 
@@ -139,5 +158,10 @@ class CursorView(context: Context, attrs: AttributeSet? = null) : View(context, 
         canvas.drawCircle(c, c, r, fillPaint)
         dotPaint.color = fillPaint.color
         canvas.drawCircle(c, c, (if (pinched) 3.5f else 2f) * resources.displayMetrics.density, dotPaint)
+        if (fistProgress > 0f) {
+            val ringR = 11.5f * resources.displayMetrics.density
+            ringBounds.set(c - ringR, c - ringR, c + ringR, c + ringR)
+            canvas.drawArc(ringBounds, -90f, 360f * fistProgress, false, ringPaint)
+        }
     }
 }

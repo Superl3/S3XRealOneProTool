@@ -18,6 +18,11 @@ import org.junit.Test
  */
 class PinchDetectorTest {
 
+    /** Frame timestamps 60fps apart — the frame counts in these tests are 60fps frames (the
+     * detectors are time-based since 2026-09-28, see [FrameTiming]). */
+    private var frame = 0
+    private fun ts(): Long = frame++ * 1000L / 60
+
     private fun landmarks(ratio: Float, handScale: Float = 1f): List<HandPoint> {
         val zero = HandPoint(0f, 0f, 0f)
         val points = MutableList(21) { zero }
@@ -33,12 +38,12 @@ class PinchDetectorTest {
         val detector = PinchDetector()
         val lm = landmarks(ratio = 0.10f) // bem abaixo de 0.28
 
-        assertNull(detector.update(lm))
+        assertNull(detector.update(lm, ts()))
         assertFalse(detector.isPinched)
-        assertNull(detector.update(lm))
+        assertNull(detector.update(lm, ts()))
         assertFalse(detector.isPinched)
 
-        val event = detector.update(lm) // 3o frame consecutivo -> confirma
+        val event = detector.update(lm, ts()) // 3o frame consecutivo -> confirma
         assertEquals(PinchEvent.DOWN, event)
         assertTrue(detector.isPinched)
     }
@@ -51,7 +56,7 @@ class PinchDetectorTest {
         val ratios = listOf(0.30f, 0.45f, 0.32f, 0.48f, 0.35f, 0.40f, 0.30f, 0.45f)
 
         for (ratio in ratios) {
-            val event = detector.update(landmarks(ratio))
+            val event = detector.update(landmarks(ratio), ts())
             assertNull("ratio=$ratio nao deveria gerar evento", event)
             assertFalse(detector.isPinched)
         }
@@ -62,18 +67,18 @@ class PinchDetectorTest {
         val detector = PinchDetector()
         val closed = landmarks(ratio = 0.10f)
         // fecha (DOWN confirmado)
-        repeat(2) { detector.update(closed) }
-        assertEquals(PinchEvent.DOWN, detector.update(closed))
+        repeat(2) { detector.update(closed, ts()) }
+        assertEquals(PinchEvent.DOWN, detector.update(closed, ts()))
         assertTrue(detector.isPinched)
 
         // ratio bem acima de 0.38: a EMA cruza o threshold de saida ja no 1o frame pos-troca
         // (0.5*0.95 + 0.5*0.10 = 0.525 > 0.38), garantindo a confirmação em exatamente
         // UP_DEBOUNCE_FRAMES=2 chamadas — liberação mais rápida (ajuste de hardware 2026-07-22).
         val open = landmarks(ratio = 0.95f)
-        assertNull(detector.update(open)) // 1o frame: candidato, ainda nao confirma (UP debounce=2)
+        assertNull(detector.update(open, ts())) // 1o frame: candidato, ainda nao confirma (UP debounce=2)
         assertTrue(detector.isPinched)
 
-        val event = detector.update(open) // 2o frame -> confirma saida
+        val event = detector.update(open, ts()) // 2o frame -> confirma saida
         assertEquals(PinchEvent.UP, event)
         assertFalse(detector.isPinched)
     }
@@ -83,8 +88,8 @@ class PinchDetectorTest {
         val detector = PinchDetector()
         val closed = landmarks(ratio = 0.10f)
 
-        assertNull(detector.update(closed))
-        assertNull(detector.update(closed)) // só 2 de 3 frames necessários
+        assertNull(detector.update(closed, ts()))
+        assertNull(detector.update(closed, ts())) // só 2 de 3 frames necessários
 
         assertFalse(detector.isPinched)
     }
@@ -93,15 +98,24 @@ class PinchDetectorTest {
     fun `reset limpa ema candidato e isPinched`() {
         val detector = PinchDetector()
         val closed = landmarks(ratio = 0.10f)
-        repeat(3) { detector.update(closed) }
+        repeat(3) { detector.update(closed, ts()) }
         assertTrue(detector.isPinched)
 
         detector.reset()
 
         assertFalse(detector.isPinched)
         // apos reset, precisa de 3 frames novamente para confirmar (EMA reiniciada do zero)
-        assertNull(detector.update(closed))
-        assertNull(detector.update(closed))
-        assertEquals(PinchEvent.DOWN, detector.update(closed))
+        assertNull(detector.update(closed, ts()))
+        assertNull(detector.update(closed, ts()))
+        assertEquals(PinchEvent.DOWN, detector.update(closed, ts()))
+    }
+
+    @Test
+    fun `a 24fps o DOWN confirma pelo tempo e nao por 3 frames`() {
+        // 3 frames at 60fps = 33ms of hold. At 24fps the second frame (42ms) already covers it.
+        val detector = PinchDetector()
+        val closed = landmarks(0.1f)
+        assertNull(detector.update(closed, 0L))
+        assertEquals(PinchEvent.DOWN, detector.update(closed, 42L))
     }
 }

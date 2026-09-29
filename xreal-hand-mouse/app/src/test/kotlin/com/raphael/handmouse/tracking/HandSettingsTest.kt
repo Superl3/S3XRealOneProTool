@@ -8,7 +8,7 @@ class HandSettingsTest {
     private fun ui(
         sens: Int = 100, pinch: Int = 50, smooth: Int = 50, dz: Int = 15, hold: Int = 400, deb: Int = 3,
         palm: Boolean = true,
-    ) = HandSettings.fromUi(sens, pinch, smooth, dz, hold, deb, palm, true, true, false)
+    ) = HandSettings.fromUi(sens, pinch, smooth, dz, hold, deb, palm, fistRecenter = false, thumbsUpMute = true, vSignVoice = false)
 
     @Test
     fun defaultUiValuesReproduceUpstreamConstants() {

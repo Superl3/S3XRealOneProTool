@@ -1,7 +1,5 @@
 package com.raphael.handmouse.tracking
 
-import kotlin.math.sqrt
-
 /**
  * Detector de THUMBS-UP — gesto de MUTE do cursor (2026-07-23, pedido do usuário: "quando
  * abaixo os braços, o cursor fica perdido e visível na tela"; ver spec
@@ -45,64 +43,51 @@ class ThumbsUpDetector {
         private const val EMA_ALPHA = 0.5f
         private const val ENTER_DEBOUNCE_FRAMES = 8
         private const val EXIT_DEBOUNCE_FRAMES = 3
-
-        private const val LM_WRIST = 0
-        private const val LM_THUMB_TIP = 4
-        private const val LM_INDEX_MCP = 5
-
-        /** Pares (ponta, PIP) — indicador, médio, anular, mindinho (mesmos do FistDetector). */
-        private val FINGER_TIP_PIP = arrayOf(
-            intArrayOf(8, 6),
-            intArrayOf(12, 10),
-            intArrayOf(16, 14),
-            intArrayOf(20, 18),
-        )
     }
 
     private var curlEma = Float.NaN
     private var thumbExtEma = Float.NaN
     private var thumbUpEma = Float.NaN
-    private var candidate: Boolean? = null
-    private var candidateFrames = 0
+    private var lastTimestampMs = 0L
+    private var dtMs = 0L
+    private val debounce = TimedDebounce()
 
     var isActive: Boolean = false
         private set
 
     /** [landmarks]: 21 pontos (ordem do MediaPipe). Retorna o estado JÁ atualizado ([isActive])
-     * — quem cronometra o hold de 1s é o chamador ([CursorPipeline]). */
-    fun update(landmarks: List<HandPoint>): Boolean {
-        val wrist = landmarks[LM_WRIST]
-        val handScale = dist3(wrist, landmarks[LM_INDEX_MCP])
+     * — quem cronometra o hold de 1s é o chamador ([CursorPipeline]). [timestampMs]: frame
+     * time — EMA and debounce are time-based ([FrameTiming]). */
+    fun update(landmarks: List<HandPoint>, timestampMs: Long): Boolean =
+        update(HandFeatures.from(landmarks), timestampMs)
 
-        var maxCurl = 0f
-        for (pair in FINGER_TIP_PIP) {
-            val ratio = dist3(wrist, landmarks[pair[0]]) / dist3(wrist, landmarks[pair[1]])
-            if (ratio > maxCurl) maxCurl = ratio
-        }
-        curlEma = ema(curlEma, maxCurl)
-
-        val thumb = landmarks[LM_THUMB_TIP]
-        thumbExtEma = ema(thumbExtEma, dist3(thumb, landmarks[LM_INDEX_MCP]) / handScale)
-        thumbUpEma = ema(thumbUpEma, (wrist.y - thumb.y) / handScale)
+    /** [allowEnter] = false blocks a NEW thumbs-up (see [FistDetector.update]). */
+    fun update(features: HandFeatures, timestampMs: Long, allowEnter: Boolean = true): Boolean {
+        dtMs = timestampMs - lastTimestampMs
+        lastTimestampMs = timestampMs
+        curlEma = ema(curlEma, features.maxCurl)
+        thumbExtEma = ema(thumbExtEma, features.thumbExtension)
+        thumbUpEma = ema(thumbUpEma, features.thumbUp)
 
         val want = when {
-            !isActive && curlEma < CURL_ENTER_THRESHOLD &&
+            !isActive && allowEnter && curlEma < CURL_ENTER_THRESHOLD &&
                 thumbExtEma > THUMB_EXT_ENTER && thumbUpEma > THUMB_UP_ENTER -> true
             isActive && (curlEma > CURL_EXIT_THRESHOLD ||
                 thumbExtEma < THUMB_EXT_EXIT || thumbUpEma < THUMB_UP_EXIT) -> false
-            else -> return isActive
+            else -> {
+                // Condition broke: the pending transition starts over. The debounce means N
+                // CONSECUTIVE frames (as documented); the frame counter used to survive these
+                // frames, so scattered qualifying frames added up — and with a clock, a stale
+                // pending entry would confirm instantly on the next qualifying frame.
+                debounce.reset()
+                return isActive
+            }
         }
 
-        if (candidate != want) {
-            candidate = want
-            candidateFrames = 0
-        }
-        candidateFrames++
         val requiredFrames = if (want) ENTER_DEBOUNCE_FRAMES else EXIT_DEBOUNCE_FRAMES
-        if (candidateFrames < requiredFrames) return isActive
+        if (!debounce.confirm(want, timestampMs, FrameTiming.framesToHoldMs(requiredFrames))) return isActive
 
         isActive = want
-        candidate = null
         return isActive
     }
 
@@ -111,18 +96,9 @@ class ThumbsUpDetector {
         curlEma = Float.NaN
         thumbExtEma = Float.NaN
         thumbUpEma = Float.NaN
-        candidate = null
-        candidateFrames = 0
+        debounce.reset()
         isActive = false
     }
 
-    private fun ema(prev: Float, sample: Float): Float =
-        if (prev.isNaN()) sample else EMA_ALPHA * sample + (1f - EMA_ALPHA) * prev
-
-    private fun dist3(a: HandPoint, b: HandPoint): Float {
-        val dx = a.x - b.x
-        val dy = a.y - b.y
-        val dz = a.z - b.z
-        return sqrt(dx * dx + dy * dy + dz * dz)
-    }
+    private fun ema(prev: Float, sample: Float): Float = FrameTiming.ema(prev, sample, EMA_ALPHA, dtMs)
 }

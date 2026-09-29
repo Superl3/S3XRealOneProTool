@@ -20,9 +20,10 @@ data class CursorPoint(val x: Float, val y: Float)
  *
  * - **Ganho**: [spanX] = fração da LARGURA do FOV que cruza a tela inteira (0.40 → mover a mão
  *   por 40% do campo de visão atravessa a tela; ajustar aqui o "sensibilidade" global).
- * - **Isotropia física**: a imagem da câmera é 4:3 — o mesmo deslocamento FÍSICO da mão gera
- *   `dny` maior que `dnx` na proporção 4/3. [aspectYOverX] (0.75) compensa, pra diagonal da mão
- *   virar diagonal na tela.
+ * - **Isotropia física**: a entrada já é isotrópica ([HandTracker.Result.isoPoints], y em
+ *   unidades de largura da imagem — 2026-09-28). Antes, y normalizado pela ALTURA era corrigido
+ *   por uma constante 0.75 feita pra câmera 4:3; a Eye entrega 1920×1080 (16:9), então o
+ *   cursor andava 1.33× mais na vertical que na horizontal pro mesmo movimento físico.
  * - **Clutch natural**: o cursor clampa nas bordas SEM acumular excesso (voltar responde na
  *   hora), e [onHandLost] solta a âncora — tirar a mão do FOV e reposicionar continua o cursor
  *   de onde estava (igual levantar o dedo do trackpad). O 1º sample de todos nasce no centro.
@@ -35,7 +36,6 @@ data class CursorPoint(val x: Float, val y: Float)
  */
 class RelativeCursorMapper(
     var spanX: Float = 0.40f, // mutable: cursor-sensitivity setting (Eye Tools fork)
-    private val aspectYOverX: Float = 0.75f,
     // Modo precisão (2026-07-23, "difícil clicar em coisas pequenas"): ganho ADAPTATIVO por
     // velocidade, a mesma ideia do "Enhance pointer precision" de mouse de verdade. Movimento
     // LENTO (mirando um alvo) usa [precisionFactor] do ganho; movimento rápido usa o ganho
@@ -49,6 +49,9 @@ class RelativeCursorMapper(
     // são px/FRAME e a inferência subiu de 30 → 60fps depois do tuning original, então em px/s a
     // zona de precisão já tinha dobrado de faixa (4px/frame @ 60fps ≈ 240px/s; 20 ≈ 1200px/s) —
     // valores confirmados em hardware nesta sessão, não re-derivados no papel.
+    // 2026-09-28: os limiares seguem em px por frame DE 60fps, mas a velocidade é medida por dt
+    // real ([FrameTiming]) — a 24fps (térmico) o mesmo movimento dava 2,5× mais px/frame e o
+    // modo precisão soltava cedo demais.
     private val precisionFactor: Float = 0.25f,
     private val precisionLowPxPerFrame: Float = 4f,
     private val precisionHighPxPerFrame: Float = 20f,
@@ -58,8 +61,11 @@ class RelativeCursorMapper(
     private var cursorX: Float? = null
     private var cursorY: Float? = null
     private var speedEma = Float.NaN
+    private var lastTimestampMs = 0L
 
-    fun map(nx: Float, ny: Float, bounds: DisplayBounds): CursorPoint {
+    /** [nx]/[ny]: isotropic hand position ([HandTracker.Result.isoPoints]); [timestampMs]: frame
+     * time, used to measure speed per real interval. */
+    fun map(nx: Float, ny: Float, bounds: DisplayBounds, timestampMs: Long): CursorPoint {
         val gain = bounds.width / spanX
         var cx = cursorX ?: (bounds.width / 2f)
         var cy = cursorY ?: (bounds.height / 2f)
@@ -67,10 +73,11 @@ class RelativeCursorMapper(
         val ax = anchorNx
         val ay = anchorNy
         if (ax != null && ay != null) {
+            val dtMs = (timestampMs - lastTimestampMs).coerceAtLeast(1L)
             val rawDx = (nx - ax) * gain
-            val rawDy = (ny - ay) * gain * aspectYOverX
-            val dist = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy)
-            speedEma = if (speedEma.isNaN()) dist else 0.5f * dist + 0.5f * speedEma
+            val rawDy = (ny - ay) * gain
+            val distPerRefFrame = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy) * FrameTiming.REFERENCE_FRAME_MS / dtMs
+            speedEma = FrameTiming.ema(speedEma, distPerRefFrame, 0.5f, dtMs)
             val ramp = ((speedEma - precisionLowPxPerFrame) /
                 (precisionHighPxPerFrame - precisionLowPxPerFrame)).coerceIn(0f, 1f)
             val factor = precisionFactor + (1f - precisionFactor) * ramp
@@ -83,6 +90,7 @@ class RelativeCursorMapper(
 
         anchorNx = nx
         anchorNy = ny
+        lastTimestampMs = timestampMs
         cursorX = cx
         cursorY = cy
         return CursorPoint(cx, cy)

@@ -58,8 +58,8 @@ class PinchDetector {
     var downDebounceFrames = DOWN_DEBOUNCE_FRAMES
 
     private var ema = Float.NaN
-    private var candidate: Boolean? = null
-    private var candidateFrames = 0
+    private var lastTimestampMs = 0L
+    private val debounce = TimedDebounce()
 
     var isPinched: Boolean = false
         private set
@@ -69,36 +69,39 @@ class PinchDetector {
      * do MediaPipe — índices 0=WRIST, 4=THUMB_TIP, 5=INDEX_MCP, 8=INDEX_TIP).
      * Retorna [PinchEvent.DOWN]/[PinchEvent.UP] só no frame em que a transição é confirmada
      * (após o debounce); `null` em todos os outros frames (inclusive durante a contagem).
+     * [timestampMs]: frame time — EMA and debounce are time-based ([FrameTiming]; the frame
+     * constants are their 60fps equivalents).
      */
-    fun update(landmarks: List<HandPoint>): PinchEvent? {
+    fun update(landmarks: List<HandPoint>, timestampMs: Long): PinchEvent? {
         val ratio = ratio(landmarks)
-        ema = if (ema.isNaN()) ratio else EMA_ALPHA * ratio + (1f - EMA_ALPHA) * ema
+        ema = FrameTiming.ema(ema, ratio, EMA_ALPHA, timestampMs - lastTimestampMs)
+        lastTimestampMs = timestampMs
 
         val want = when {
             !isPinched && ema < enterThreshold -> true
             isPinched && ema > exitThreshold -> false
-            else -> return null
+            else -> {
+                // Condition broke: the pending transition starts over. The debounce means N
+                // CONSECUTIVE frames (as documented); the frame counter used to survive these
+                // frames, so scattered qualifying frames added up — and with a clock, a stale
+                // pending entry would confirm instantly on the next qualifying frame.
+                debounce.reset()
+                return null
+            }
         }
 
-        if (candidate != want) {
-            candidate = want
-            candidateFrames = 0
-        }
-        candidateFrames++
         // want==true é entrada (DOWN); want==false é liberação (UP) — ver o ramo acima.
         val requiredFrames = if (want) downDebounceFrames else UP_DEBOUNCE_FRAMES
-        if (candidateFrames < requiredFrames) return null
+        if (!debounce.confirm(want, timestampMs, FrameTiming.framesToHoldMs(requiredFrames))) return null
 
         isPinched = want
-        candidate = null
         return if (want) PinchEvent.DOWN else PinchEvent.UP
     }
 
     /** Limpa EMA, candidato e estado de pinch (chamar quando a mão some/reaparece). */
     fun reset() {
         ema = Float.NaN
-        candidate = null
-        candidateFrames = 0
+        debounce.reset()
         isPinched = false
     }
 

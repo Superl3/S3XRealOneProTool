@@ -14,6 +14,13 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- Tarefa 5: notificação full-screen-intent na desconexão USB (PLANO.md Fase 5) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <!-- Glasses IMU (2026-09-29): TCP to the glasses' USB network 169.254.2.1:52998, found via
+         ConnectivityManager (imu/XrealImuClient.kt) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Recording enhancer (2026-09-29): mediaProcessing needs API 35, dataSync covers 34 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING"/>
 
     <!-- Visibilidade de pacotes (fix de revisão final 2026-07-23): com targetSdk 30+, sem esta
          declaração o queryIntentActivities do AppLauncher só enxerga pacotes auto-visíveis —
@@ -56,6 +63,9 @@
 
         <service android:name=".service.EyeCaptureService" android:exported="false"
                  android:foregroundServiceType="connectedDevice|microphone"/>
+
+        <service android:name=".enhance.EnhanceService" android:exported="false"
+                 android:foregroundServiceType="dataSync|mediaProcessing"/>
 
         <service
             android:name=".service.HandMouseAccessibilityService"

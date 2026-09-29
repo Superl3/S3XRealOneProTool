@@ -2,6 +2,7 @@ package com.raphael.handmouse.capture
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -118,5 +119,57 @@ class FrameAssemblerTest {
         val assembler = FrameAssembler()
         val out = assembler.offerPayload(ByteArray(0), 0)
         assertTrue(out.isEmpty())
+    }
+
+    // ---- payload spanning several reads (2026-09-29, broken frames on the Eye) ----
+
+    @Test
+    fun `continuation read starting with 2 to 12 is data, not a header`() {
+        // One payload (header + EOF) larger than the 8-byte read buffer, like the Eye's MJPEG.
+        val assembler = FrameAssembler(readSize = 8)
+        val first = byteArrayOf(0x02, 0x02, 1, 2, 3, 4, 5, 6) // full read: header + 6 bytes
+        assertTrue(assembler.offerPayload(first, first.size).isEmpty())
+        assertTrue(assembler.inPayload)
+        val cont = byteArrayOf(0x05, 0x01, 7, 8, 9, 10, 11, 12) // looked like a 5-byte header
+        assertTrue(assembler.offerPayload(cont, cont.size).isEmpty())
+        val last = byteArrayOf(13, 14, 15) // short read ends the payload
+        val out = assembler.offerPayload(last, last.size)
+        assertEquals(1, out.size)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6, 0x05, 0x01, 7, 8, 9, 10, 11, 12, 13, 14, 15), out[0])
+        assertFalse(assembler.inPayload)
+    }
+
+    @Test
+    fun `payloads no larger than a read keep one header per read`() {
+        val assembler = FrameAssembler(readSize = 8, maxPayloadSize = 8)
+        val p1 = byteArrayOf(0x02, 0x00, 1, 2, 3, 4, 5, 6)
+        assertTrue(assembler.offerPayload(p1, p1.size).isEmpty())
+        assertFalse(assembler.inPayload)
+        val p2 = byteArrayOf(0x02, 0x02, 7, 8, 9, 10, 11, 12)
+        val out = assembler.offerPayload(p2, p2.size)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), out.single())
+    }
+
+    @Test
+    fun `reaching the negotiated payload size ends the payload`() {
+        val assembler = FrameAssembler(readSize = 8, maxPayloadSize = 16)
+        val first = byteArrayOf(0x02, 0x02, 1, 2, 3, 4, 5, 6)
+        assembler.offerPayload(first, first.size)
+        val cont = byteArrayOf(7, 8, 9, 10, 11, 12, 13, 14)
+        val out = assembler.offerPayload(cont, cont.size)
+        assertEquals(14, out.single().size)
+        assertFalse(assembler.inPayload)
+        // the next read starts a new payload with a header again
+        val next = byteArrayOf(0x02, 0x03, 42)
+        assertArrayEquals(byteArrayOf(42), assembler.offerPayload(next, next.size).single())
+    }
+
+    @Test
+    fun `a timeout or empty read ends an open payload`() {
+        val assembler = FrameAssembler(readSize = 8)
+        val first = byteArrayOf(0x02, 0x02, 1, 2, 3, 4, 5, 6)
+        assembler.offerPayload(first, first.size)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), assembler.endPayload().single())
+        assertTrue(assembler.endPayload().isEmpty())
     }
 }

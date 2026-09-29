@@ -15,7 +15,8 @@ class VoiceCommandParserTest {
     fun `Korean commands are recognized`() {
         assertEquals(VoiceCommand.Back, VoiceCommandParser.parse("뒤로"))
         assertEquals(VoiceCommand.Home, VoiceCommandParser.parse("홈"))
-        assertEquals(VoiceCommand.Home, VoiceCommandParser.parse("닫기"))
+        assertEquals(VoiceCommand.CloseApp, VoiceCommandParser.parse("닫기"))
+        assertEquals(VoiceCommand.CloseApp, VoiceCommandParser.parse("창 닫기"))
         assertEquals(VoiceCommand.Recents, VoiceCommandParser.parse("최근 앱"))
         assertEquals(VoiceCommand.SendEnter, VoiceCommandParser.parse("전송"))
         assertEquals(VoiceCommand.ClearText, VoiceCommandParser.parse("모두 지우기"))
@@ -25,6 +26,7 @@ class VoiceCommandParserTest {
     fun `comandos exatos em ingles`() {
         assertEquals(VoiceCommand.Back, VoiceCommandParser.parse("back"))
         assertEquals(VoiceCommand.Home, VoiceCommandParser.parse("home"))
+        assertEquals(VoiceCommand.CloseApp, VoiceCommandParser.parse("close"))
         assertEquals(VoiceCommand.Recents, VoiceCommandParser.parse("recents"))
         assertEquals(VoiceCommand.SendEnter, VoiceCommandParser.parse("send"))
         assertEquals(VoiceCommand.ClearText, VoiceCommandParser.parse("clear"))

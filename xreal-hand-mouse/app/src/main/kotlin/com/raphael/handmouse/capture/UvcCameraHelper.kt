@@ -185,6 +185,27 @@ class UvcCameraHelper(private val context: Context) {
 
     @Volatile
     var formatPreference = FormatPreference.MJPEG_FIRST
+
+    /**
+     * User camera settings (2026-09-29). The Eye's JPEG quality is fixed (~IJG 30, no UVC control
+     * for it), so night footage can only be helped through exposure and anti-flicker, which the
+     * camera exposes as standard UVC controls (xrprobe PROTOCOL.md; confirmed per device by the
+     * diagnostics log). -1 / 0 leave the camera default untouched.
+     */
+    data class CameraControls(
+        /** Processing Unit power-line frequency: -1 = camera default, 0 = off, 1 = 50 Hz, 2 = 60 Hz. */
+        val powerLineFrequency: Int = -1,
+        /** Manual exposure time in 100 µs units; 0 = auto exposure (camera default). */
+        val manualExposure100us: Int = 0,
+    )
+
+    @Volatile
+    var cameraControls = CameraControls()
+
+    /** Configuration descriptor of the open camera — entity ids for [applyCameraControls]. */
+    @Volatile
+    private var rawDescriptorsCache: ByteArray? = null
+    private var appliedControls: CameraControls? = null
         private set
 
     /** Changes the preferred order; takes effect at the next [startStream]. Returns true if it
@@ -401,6 +422,21 @@ class UvcCameraHelper(private val context: Context) {
             })
         }
 
+        // 2026-09-29 (video quality): what the camera declares — per-frame bitrate/buffer and
+        // the exposure/gain/brightness controls — plus their current values. Read-only.
+        try {
+            val raw = conn.rawDescriptors ?: ByteArray(0)
+            UvcDiagnostics.describe(raw).forEach { listener?.onLog(it) }
+            rawDescriptorsCache = raw
+            appliedControls = null
+            if (vcIface != null) {
+                applyCameraControls(conn, vcIface, raw)
+                logControlValues(conn, vcIface, raw)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "UVC diagnostics failed: ${e.message}")
+        }
+
         formatCandidates = buildFormatCandidates(frameDescs)
         listener?.onLog("Format candidates (in order): " + formatCandidates.mapIndexed { idx, c ->
             "#$idx ${describeCandidate(c)}"
@@ -437,8 +473,14 @@ class UvcCameraHelper(private val context: Context) {
      * GET_CUR falhar). [formatIndex]/[frameIndex] vêm do chamador (experimento de resolução —
      * ver [startStream]); o caminho clássico é (1, 1).
      */
+    /** dwMaxPayloadTransferSize from the negotiated probe (0 = unknown) — tells [FrameAssembler]
+     * how long a payload that spans several bulk reads can be. */
+    @Volatile
+    private var negotiatedMaxPayload = 0
+
     private fun negotiateStream(conn: UsbDeviceConnection, vsIface: UsbInterface, formatIndex: Int, frameIndex: Int) {
         val ifaceId = vsIface.id
+        negotiatedMaxPayload = 0
 
         listener?.onLog("SET_INTERFACE alt=1 for IF#$ifaceId...")
         val setIfResult = conn.controlTransfer(0x01, 0x0B, 1, ifaceId, null, 0, 2000)
@@ -470,6 +512,10 @@ class UvcCameraHelper(private val context: Context) {
             if (curProbe != null) {
                 listener?.onLog("Negotiated: ${formatProbe(curProbe)}")
                 probe = curProbe
+                if (curProbe.size >= 26) {
+                    negotiatedMaxPayload = (curProbe[22].toInt() and 0xFF) or ((curProbe[23].toInt() and 0xFF) shl 8) or
+                        ((curProbe[24].toInt() and 0xFF) shl 16) or ((curProbe[25].toInt() and 0xFF) shl 24)
+                }
             }
 
             result = uvcSetControl(conn, VS_COMMIT_CONTROL, ifaceId, probe)
@@ -485,7 +531,7 @@ class UvcCameraHelper(private val context: Context) {
      */
     private fun readAndDeliverFrames(conn: UsbDeviceConnection, endpoint: UsbEndpoint) {
         val buffer = ByteArray(BULK_BUFFER_SIZE)
-        val assembler = FrameAssembler()
+        val assembler = FrameAssembler(readSize = BULK_BUFFER_SIZE, maxPayloadSize = negotiatedMaxPayload)
 
         var bulkReadCount = 0
         var frameCount = 0
@@ -494,12 +540,27 @@ class UvcCameraHelper(private val context: Context) {
         var stalled = false
         var deadEndpoint = false
 
-        listener?.onLog("Starting bulk reads (buf=$BULK_BUFFER_SIZE maxPkt=${endpoint.maxPacketSize})...")
+        listener?.onLog("Starting bulk reads (buf=$BULK_BUFFER_SIZE maxPkt=${endpoint.maxPacketSize} maxPayload=$negotiatedMaxPayload)...")
+
+        // 2026-09-29 (broken frames): how often a read does NOT start with a proper UVC payload
+        // header. FrameAssembler takes byte0 in 2..12 as a header length without checking the
+        // EOH bit (0x80 of byte1), so a headerless continuation whose first data byte happens to
+        // be 2..12 loses those bytes from the JPEG. Counted only — behaviour is unchanged.
+        var fullReads = 0
+        var continuations = 0
+        var headerEohClear = 0
+        var headerErr = 0
+        var noHeader = 0
 
         while (isStreaming) {
             val read = conn.bulkTransfer(endpoint, buffer, BULK_BUFFER_SIZE, BULK_TIMEOUT_MS)
 
             if (read <= 0) {
+                // A payload never continues across an empty read or a timeout (2026-09-29).
+                for (frame in assembler.endPayload()) {
+                    if (PayloadFormat.detect(frame) != PayloadFormat.UNKNOWN) frameCount++
+                    listener?.onFrameReceived(frame)
+                }
                 // Some USB stacks report a timed-out bulk read as 0 rather than -1.
                 // Count both as silence so repeated empty reads cannot spin forever.
                 if (read == -1 || read == 0) {
@@ -547,6 +608,18 @@ class UvcCameraHelper(private val context: Context) {
                 Log.d(TAG, "Bulk #$bulkReadCount: $read bytes: $hex")
             }
 
+            if (read == BULK_BUFFER_SIZE) fullReads++
+            val hLen = buffer[0].toInt() and 0xFF
+            if (assembler.inPayload) {
+                continuations++
+            } else if (read >= 2 && hLen in 2..12 && hLen <= read) {
+                val info = buffer[1].toInt() and 0xFF
+                if (info and 0x80 == 0) headerEohClear++
+                if (info and 0x40 != 0) headerErr++
+            } else {
+                noHeader++
+            }
+
             for (frame in assembler.offerPayload(buffer, read)) {
                 // The Eye can send short all-zero UVC filler packets with EOF before it
                 // produces any image. They must not satisfy warmup or suppress format fallback.
@@ -555,7 +628,8 @@ class UvcCameraHelper(private val context: Context) {
             }
 
             if (bulkReadCount % 1000 == 0) {
-                listener?.onLog("Stats: $bulkReadCount reads, $frameCount frames")
+                listener?.onLog("Stats: $bulkReadCount reads, $frameCount frames, full=$fullReads " +
+                    "continuation=$continuations noHeader=$noHeader headerNoEOH=$headerEohClear headerERR=$headerErr")
             }
         }
 
@@ -605,7 +679,80 @@ class UvcCameraHelper(private val context: Context) {
             ((data[20].toInt() and 0xFF) shl 16) or ((data[21].toInt() and 0xFF) shl 24)
         val maxPayload = (data[22].toInt() and 0xFF) or ((data[23].toInt() and 0xFF) shl 8) or
             ((data[24].toInt() and 0xFF) shl 16) or ((data[25].toInt() and 0xFF) shl 24)
-        return "fmt=$fmt frm=$frm ${"%.1f".format(fps)}fps maxFrame=$maxFrame maxPayload=$maxPayload"
+        val compQuality = (data[12].toInt() and 0xFF) or ((data[13].toInt() and 0xFF) shl 8)
+        return "fmt=$fmt frm=$frm ${"%.1f".format(fps)}fps maxFrame=$maxFrame maxPayload=$maxPayload compQuality=$compQuality"
+    }
+
+    /** Re-applies [cameraControls] to the open camera (settings changed while streaming). */
+    fun applyCameraControls() {
+        val conn = streamingConnection ?: return
+        val vc = videoControlInterface ?: return
+        val raw = rawDescriptorsCache ?: return
+        applyCameraControls(conn, vc, raw)
+    }
+
+    @Synchronized
+    private fun applyCameraControls(conn: UsbDeviceConnection, vcIface: UsbInterface, raw: ByteArray) {
+        val want = cameraControls
+        val had = appliedControls
+        if (want == had) return
+        val entities = UvcDiagnostics.entities(raw)
+        val ct = entities.firstOrNull { it.kind == UvcDiagnostics.Kind.CAMERA_TERMINAL }
+        val pu = entities.firstOrNull { it.kind == UvcDiagnostics.Kind.PROCESSING_UNIT }
+        fun supports(e: UvcDiagnostics.Entity?, bit: Int) = e != null && e.controls and (1L shl bit) != 0L
+        fun set(e: UvcDiagnostics.Entity, selector: Int, data: ByteArray, what: String) {
+            val r = conn.controlTransfer(USB_RT_CLASS_IFACE_SET, UVC_SET_CUR, selector shl 8, (e.id shl 8) or vcIface.id, data, data.size, 500)
+            listener?.onLog("Camera control $what -> ${if (r == data.size) "OK" else "failed ($r)"}")
+        }
+        fun get(e: UvcDiagnostics.Entity, request: Int, selector: Int, size: Int): ByteArray? {
+            val data = ByteArray(size)
+            val r = conn.controlTransfer(USB_RT_CLASS_IFACE_GET, request, selector shl 8, (e.id shl 8) or vcIface.id, data, size, 500)
+            return if (r == size) data else null
+        }
+
+        // Anti-flicker: only touched once the user picked a value (the camera default is kept otherwise).
+        if (want.powerLineFrequency >= 0 && want.powerLineFrequency != had?.powerLineFrequency) {
+            if (supports(pu, 10)) set(pu!!, 0x05, byteArrayOf(want.powerLineFrequency.toByte()), "PowerLineFrequency=${want.powerLineFrequency}")
+            else listener?.onLog("Camera control PowerLineFrequency not supported")
+        }
+        // Exposure: manual time, or back to the camera's default AE mode when switched to auto.
+        // On a new stream with "auto", the camera may still hold a manual mode set earlier (UVC
+        // controls survive re-opening), so compare with its default instead of assuming.
+        val staleManual = had == null && want.manualExposure100us == 0 && supports(ct, 1) &&
+            get(ct!!, 0x81, 0x02, 1)?.let { cur -> get(ct, 0x87, 0x02, 1)?.let { def -> cur[0] != def[0] } } == true
+        if (staleManual || want.manualExposure100us != (had?.manualExposure100us ?: 0) || (had == null && want.manualExposure100us > 0)) {
+            if (!supports(ct, 1)) {
+                listener?.onLog("Camera control AutoExposureMode not supported")
+            } else if (want.manualExposure100us > 0) {
+                set(ct!!, 0x02, byteArrayOf(0x01), "AutoExposureMode=manual")
+                if (supports(ct, 3)) {
+                    val v = want.manualExposure100us
+                    set(ct, 0x04, byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte()), "ExposureTimeAbsolute=$v")
+                }
+            } else {
+                val def = get(ct!!, 0x87, 0x02, 1)
+                if (def != null) set(ct, 0x02, def, "AutoExposureMode=default(${def[0].toInt() and 0xFF})")
+            }
+        }
+        appliedControls = want
+    }
+
+    /** Logs GET_CUR/MIN/MAX/DEF of every exposure/gain/brightness-type control the camera
+     * declares (2026-09-29, video quality). Read-only; a failed request is logged as -. */
+    private fun logControlValues(conn: UsbDeviceConnection, vcIface: UsbInterface, raw: ByteArray) {
+        for (entity in UvcDiagnostics.entities(raw)) {
+            for (control in UvcDiagnostics.supportedControls(entity)) {
+                val values = listOf("cur" to 0x81, "min" to 0x82, "max" to 0x83, "def" to 0x87).joinToString(" ") { (label, request) ->
+                    val data = ByteArray(control.size)
+                    val r = conn.controlTransfer(
+                        USB_RT_CLASS_IFACE_GET, request, control.selector shl 8,
+                        (entity.id shl 8) or vcIface.id, data, data.size, 500,
+                    )
+                    "$label=" + if (r == control.size) UvcDiagnostics.formatValue(data) else "-"
+                }
+                listener?.onLog("UVC ${entity.kind} id=${entity.id} ${control.name}: $values")
+            }
+        }
     }
 
     private fun uvcSetControl(conn: UsbDeviceConnection, selector: Int, ifaceId: Int, data: ByteArray): Int {

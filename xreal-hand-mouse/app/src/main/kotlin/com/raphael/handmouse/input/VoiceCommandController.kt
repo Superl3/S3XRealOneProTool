@@ -45,6 +45,8 @@ class VoiceCommandController(
     private val textInserter: TextInserter,
     private val prefs: Prefs,
     private val overlay: CursorOverlay,
+    /** Closes the app window under the cursor on the given display ([WindowController.closeApp]). */
+    private val closeWindow: (displayId: Int) -> Boolean,
 ) {
 
     companion object {
@@ -218,6 +220,7 @@ class VoiceCommandController(
             VoiceCommand.Back -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             VoiceCommand.Home -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             VoiceCommand.Recents -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
+            VoiceCommand.CloseApp -> closeWindow(displayId)
             VoiceCommand.SendEnter -> textInserter.pressEnter()
             VoiceCommand.ClearText -> textInserter.clearAll()
             is VoiceCommand.OpenApp -> appLauncher.launch(command.query, displayId)

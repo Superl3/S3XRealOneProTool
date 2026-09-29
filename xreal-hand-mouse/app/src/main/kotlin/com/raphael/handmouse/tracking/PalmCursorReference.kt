@@ -26,14 +26,17 @@ class PalmCursorReference {
         val medianY = median(recentY)
         val previousX = smoothX
         val previousY = smoothY
+        val dt = (timestampMs - (lastTimestampMs ?: timestampMs)).coerceIn(1L, 80L)
         // Follow deliberate travel faster, but damp the small oscillations of hand detection.
+        // Thresholds/alphas are per 60fps frame; scaled by dt so the feel does not change when
+        // inference drops to 40/24fps ([FrameTiming]).
         val delta = if (previousX == null || previousY == null) 0f else
             kotlin.math.hypot(medianX - previousX, medianY - previousY)
-        val alpha = if (delta > 0.012f) 0.65f else 0.28f
+        val deltaPerRefFrame = delta * FrameTiming.REFERENCE_FRAME_MS / dt
+        val alpha = FrameTiming.alpha(if (deltaPerRefFrame > 0.012f) 0.65f else 0.28f, dt)
         var resultX = if (previousX == null) medianX else previousX + alpha * (medianX - previousX)
         var resultY = if (previousY == null) medianY else previousY + alpha * (medianY - previousY)
         if (previousX != null && previousY != null) {
-            val dt = (timestampMs - (lastTimestampMs ?: timestampMs)).coerceIn(1L, 80L)
             val maxStep = 0.01f * dt / 16f
             val dx = resultX - previousX
             val dy = resultY - previousY

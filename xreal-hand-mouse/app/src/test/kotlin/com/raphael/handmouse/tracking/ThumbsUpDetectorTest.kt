@@ -22,6 +22,11 @@ import org.junit.Test
  */
 class ThumbsUpDetectorTest {
 
+    /** Frame timestamps 60fps apart — the frame counts in these tests are 60fps frames (the
+     * detectors are time-based since 2026-09-28, see [FrameTiming]). */
+    private var frame = 0
+    private fun ts(): Long = frame++ * 1000L / 60
+
     private fun landmarks(fingerRatio: Float, thumb: HandPoint): List<HandPoint> {
         val zero = HandPoint(0f, 0f, 0f)
         val points = MutableList(21) { zero }
@@ -44,75 +49,75 @@ class ThumbsUpDetectorTest {
     @Test
     fun `thumbs-up confirma apos 8 frames sustentados`() {
         val d = ThumbsUpDetector()
-        repeat(7) { assertFalse("frame ${it + 1} ainda não confirma", d.update(thumbsUp())) }
-        assertTrue(d.update(thumbsUp())) // 8º frame -> confirma
+        repeat(7) { assertFalse("frame ${it + 1} ainda não confirma", d.update(thumbsUp(), ts())) }
+        assertTrue(d.update(thumbsUp(), ts())) // 8º frame -> confirma
         assertTrue(d.isActive)
     }
 
     @Test
     fun `punho com polegar recolhido nunca vira thumbs-up`() {
         val d = ThumbsUpDetector()
-        repeat(20) { assertFalse(d.update(fist())) }
+        repeat(20) { assertFalse(d.update(fist(), ts())) }
     }
 
     @Test
     fun `mao aberta com polegar pra cima nao ativa (dedos nao dobrados)`() {
         val d = ThumbsUpDetector()
-        repeat(20) { assertFalse(d.update(landmarks(1.35f, HandPoint(0f, -1.5f, 0f)))) }
+        repeat(20) { assertFalse(d.update(landmarks(1.35f, HandPoint(0f, -1.5f, 0f)), ts())) }
     }
 
     @Test
     fun `thumbs-DOWN nao ativa (polegar abaixo do punho)`() {
         // dist(4,5) ok (≈1.8) mas up = (0 - 1.5)/1 = -1.5 < 0.5 — y cresce pra baixo.
         val d = ThumbsUpDetector()
-        repeat(20) { assertFalse(d.update(landmarks(0.9f, HandPoint(0f, 1.5f, 0f)))) }
+        repeat(20) { assertFalse(d.update(landmarks(0.9f, HandPoint(0f, 1.5f, 0f)), ts())) }
     }
 
     @Test
     fun `polegar estendido DE LADO nao ativa (sem componente pra cima)`() {
         // dist(4,5)=2.5 > 0.85, mas up=0 < 0.5 — carona/hitchhiker lateral não é o gesto.
         val d = ThumbsUpDetector()
-        repeat(20) { assertFalse(d.update(landmarks(0.9f, HandPoint(-1.5f, 0f, 0f)))) }
+        repeat(20) { assertFalse(d.update(landmarks(0.9f, HandPoint(-1.5f, 0f, 0f)), ts())) }
     }
 
     @Test
     fun `abrir a mao solta o thumbs-up apos 3 frames`() {
         val d = ThumbsUpDetector()
-        repeat(8) { d.update(thumbsUp()) }
+        repeat(8) { d.update(thumbsUp(), ts()) }
         assertTrue(d.isActive)
 
         // Mão abre (dedos 1.6): curlEma 0.9 -> 0.5*1.6+0.5*0.9 = 1.25 > EXIT 1.20 já no 1º
         // frame; debounce de saída = 3.
         val open = landmarks(1.6f, HandPoint(0f, -1.5f, 0f))
-        d.update(open)
-        d.update(open)
+        d.update(open, ts())
+        d.update(open, ts())
         assertTrue("2 de 3 — ainda ativo", d.isActive)
-        d.update(open)
+        d.update(open, ts())
         assertFalse(d.isActive)
     }
 
     @Test
     fun `recolher o polegar (virar punho) tambem solta o thumbs-up`() {
         val d = ThumbsUpDetector()
-        repeat(8) { d.update(thumbsUp()) }
+        repeat(8) { d.update(thumbsUp(), ts()) }
         assertTrue(d.isActive)
 
         // Polegar recolhe: thumbEma cai de ~1.8 e upEma de 1.5; a condição de saída dispara
         // quando qualquer métrica cruza o exit. 6 frames dão folga pra EMA + debounce de 3.
-        repeat(6) { d.update(fist()) }
+        repeat(6) { d.update(fist(), ts()) }
         assertFalse(d.isActive)
     }
 
     @Test
     fun `reset limpa estado e exige debounce completo de novo`() {
         val d = ThumbsUpDetector()
-        repeat(8) { d.update(thumbsUp()) }
+        repeat(8) { d.update(thumbsUp(), ts()) }
         assertTrue(d.isActive)
 
         d.reset()
 
         assertFalse(d.isActive)
-        repeat(7) { assertFalse(d.update(thumbsUp())) }
-        assertTrue(d.update(thumbsUp()))
+        repeat(7) { assertFalse(d.update(thumbsUp(), ts())) }
+        assertTrue(d.update(thumbsUp(), ts()))
     }
 }

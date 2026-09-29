@@ -1,5 +1,3 @@
-import java.util.zip.ZipFile
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -20,19 +18,10 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Installable release APK without a private keystore: signed with the local debug
-            // key. Release builds exclude the reverse-engineering ioctl tap (see below), so this
-            // is the build to use day to day.
+            // Installable release APK without a private keystore: signed with the local debug key.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -65,74 +54,6 @@ android {
     }
 
     buildFeatures { buildConfig = true }
-}
-
-// O interpositor do spike (libioctltap.so) NUNCA vai pro release. Usamos a Variant API
-// (em vez de buildTypes.release.packaging{}) porque esse bloco DSL, nesta versão do AGP
-// (8.10.1) + Gradle 8.14, vazou a exclusão para a variant debug também (confirmado
-// empiricamente: com o bloco em buildTypes.release, libioctltap.so sumia do APK debug).
-androidComponents {
-    onVariants(selector().withBuildType("release")) { variant ->
-        variant.packaging.jniLibs.excludes.add("**/libioctltap.so")
-    }
-}
-
-// Guarda ESTRUTURAL (fix de revisão final) contra o achado "release exclusion depende de um
-// nome de arquivo hard-coded": AGP 8.10.1 não expôs, nos testes desta sessão, uma forma
-// funcional de escopar externalNativeBuild por variant — `externalNativeBuild.cmake.targets`
-// em defaultConfig/buildTypes.release é um `MutableSet<String>` que a AGP UNE (não sobrescreve)
-// entre defaultConfig e buildType, então um `targets()` vazio em release NÃO impede o CMake de
-// compilar (nem, empiricamente, de EMPACOTAR — confirmado buildando com o excludes acima
-// desligado: libioctltap.so reapareceu no APK de release mesmo com targets() vazio ali).
-// Optamos então pela verificação pós-build: deriva os nomes de .so DIRETO do
-// src/main/cpp/CMakeLists.txt (via regex em add_library(... SHARED ...), não hard-coded) e
-// falha assembleRelease se qualquer um deles estiver no APK de release — cobre tanto um rename
-// do alvo CMake quanto um 2º .so novo adicionado ao CMakeLists.txt, sem exigir nenhuma edição
-// paralela aqui. `androidComponents{}` acima continua como defesa em profundidade (mais barata,
-// roda durante o merge de packaging), esta verificação é o que realmente garante a invariante.
-tasks.register("verifyNoSpikeNativeLibsInRelease") {
-    group = "verification"
-    description = "Falha se algum .so definido em src/main/cpp/CMakeLists.txt estiver no APK de release."
-    dependsOn("packageRelease")
-
-    doLast {
-        val cmakeListsFile = file("src/main/cpp/CMakeLists.txt")
-        val libTargetRegex = Regex("""add_library\(\s*(\S+)\s+SHARED""")
-        val forbiddenSoNames = cmakeListsFile.readText()
-            .lineSequence()
-            .mapNotNull { libTargetRegex.find(it)?.groupValues?.get(1) }
-            .map { "lib$it.so" }
-            .toSet()
-
-        if (forbiddenSoNames.isEmpty()) {
-            logger.warn("verifyNoSpikeNativeLibsInRelease: nenhum add_library(... SHARED ...) encontrado em $cmakeListsFile — nada a verificar (suspeito; confira o CMakeLists.txt).")
-            return@doLast
-        }
-
-        val apkOutDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
-        val apkFile = apkOutDir.listFiles { f -> f.name.endsWith(".apk") }?.firstOrNull()
-            ?: throw GradleException("verifyNoSpikeNativeLibsInRelease: nenhum APK de release encontrado em $apkOutDir")
-
-        val leaked = ZipFile(apkFile).use { zip ->
-            zip.entries().asSequence()
-                .map { it.name.substringAfterLast('/') }
-                .filter { it in forbiddenSoNames }
-                .toList()
-        }
-
-        if (leaked.isNotEmpty()) {
-            throw GradleException(
-                "APK de release ($apkFile) contém biblioteca(s) nativa(s) definida(s) em " +
-                    "src/main/cpp/CMakeLists.txt que deveriam ser DEBUG-ONLY: $leaked"
-            )
-        }
-    }
-}
-
-afterEvaluate {
-    tasks.named("assembleRelease") {
-        finalizedBy("verifyNoSpikeNativeLibsInRelease")
-    }
 }
 
 dependencies {

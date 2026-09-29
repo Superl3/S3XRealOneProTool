@@ -124,6 +124,16 @@ class Prefs(context: Context) {
      * service, before a hand counts as seen. */
     val ignoreBottomPct: Int get() = prefs.getInt(KEY_IGNORE_BOTTOM, 0)
 
+    /** Camera anti-flicker / exposure ([com.raphael.handmouse.capture.UvcCameraHelper.CameraControls]). */
+    val cameraControls: com.raphael.handmouse.capture.UvcCameraHelper.CameraControls get() =
+        com.raphael.handmouse.capture.UvcCameraHelper.CameraControls(
+            powerLineFrequency = (prefs.getString(KEY_CAM_ANTI_FLICKER, "-1") ?: "-1").toIntOrNull() ?: -1,
+            manualExposure100us = (prefs.getString(KEY_CAM_EXPOSURE, "0") ?: "0").toIntOrNull() ?: 0,
+        )
+
+    /** Write every hand-tracking result to a JSONL file ([com.raphael.handmouse.recording.LandmarkLog]). */
+    val landmarkLog: Boolean get() = prefs.getBoolean(KEY_LANDMARK_LOG, false)
+
     /** All hand-mouse tuning, resolved in one place (defaults = preferences.xml). */
     fun handSettings(): HandSettings = HandSettings.fromUi(
         sensitivityPct = prefs.getInt(KEY_CURSOR_SENSITIVITY, 100),
@@ -135,12 +145,27 @@ class Prefs(context: Context) {
         palmMenu = prefs.getBoolean(KEY_PALM_MENU, true),
         magneticClick = prefs.getBoolean(KEY_MAGNETIC_CLICK, true),
         debugOverlay = prefs.getBoolean(KEY_DEBUG_OVERLAY, false),
-        fistRecenter = prefs.getBoolean(KEY_FIST_RECENTER, true),
+        fistRecenter = prefs.getBoolean(KEY_FIST_RECENTER, false),
         thumbsUpMute = prefs.getBoolean(KEY_THUMBS_UP_MUTE, true),
         vSignVoice = prefs.getBoolean(KEY_V_SIGN_VOICE, false),
         worldPinch = prefs.getBoolean(KEY_WORLD_PINCH, false),
         layerStepThousandths = prefs.getInt(KEY_LAYER_STEP, 45),
+        gestureHints = prefs.getBoolean(KEY_GESTURE_HINTS, true),
+        fistTouch = prefs.getBoolean(KEY_FIST_TOUCH, false),
+        headCompensation = headCompensation,
+        headCalibration = headCalibration,
     )
+
+    /** Cursor head-motion compensation (off by default; no effect without [headCalibration]). */
+    val headCompensation: Boolean get() = prefs.getBoolean(KEY_HEAD_COMP, false)
+
+    /** IMU→camera fit written by the enhancer ([com.raphael.handmouse.imu.ImuCameraCalibration]). */
+    var headCalibration: com.raphael.handmouse.imu.ImuCameraCalibration?
+        get() = com.raphael.handmouse.imu.ImuCameraCalibration.decode(prefs.getString(KEY_HEAD_CALIBRATION, null))
+        set(value) = prefs.edit().putString(KEY_HEAD_CALIBRATION, value?.encode()).apply()
+
+    /** Dataset label while collecting gesture images ([com.raphael.handmouse.recording.DatasetRecorder]); null = off. */
+    val datasetLabel: String? get() = (prefs.getString(KEY_DATASET_LABEL, DATASET_OFF) ?: DATASET_OFF).takeIf { it != DATASET_OFF }
 
     // ---- Eye recorder ----
     /** Stream used while recording: "mjpeg" (default — on current firmware the UVC "HEVC" modes also deliver JPEG), "hevc_1080" or "hevc_native". */
@@ -152,6 +177,10 @@ class Prefs(context: Context) {
     /** "gallery" (Movies/XrealEye, default) or "app" (app-private folder). */
     val recordStorage: String get() = prefs.getString(KEY_REC_STORAGE, "gallery") ?: "gallery"
     val recordAutoStart: Boolean get() = prefs.getBoolean(KEY_REC_AUTO_START, false)
+    /** Gyroflow `.gcsv` of the glasses' IMU next to every recording (on by default). */
+    val recordGyroLog: Boolean get() = prefs.getBoolean(KEY_REC_GYRO_LOG, true)
+    /** The enhancer deletes the MKV (and its `.gcsv`) once the MP4 checked out (on by default). */
+    val enhanceDeleteOriginal: Boolean get() = prefs.getBoolean(KEY_ENHANCE_DELETE_ORIGINAL, true)
 
     // ---- Display ----
     val dimAuto: Boolean get() = prefs.getBoolean(KEY_DIM_AUTO, true)
@@ -184,10 +213,22 @@ const val KEY_PALM_MENU = "hm_palm_menu"
 const val KEY_MAGNETIC_CLICK = "hm_magnetic_click"
 const val KEY_DEBUG_OVERLAY = "hm_debug_overlay"
 const val KEY_FIST_RECENTER = "hm_fist_recenter"
+const val KEY_FIST_TOUCH = "hm_fist_touch"
+const val KEY_HEAD_COMP = "hm_head_comp"
+/** "hm_" so the accessibility service re-applies the hand settings when the enhancer stores a fit. */
+const val KEY_HEAD_CALIBRATION = "hm_head_calibration"
+const val KEY_DATASET_LABEL = "hm_dataset_label"
+const val DATASET_OFF = "off"
+const val KEY_REC_GYRO_LOG = "rec_gyro_log"
+const val KEY_ENHANCE_DELETE_ORIGINAL = "rec_enhance_delete_original"
 const val KEY_THUMBS_UP_MUTE = "hm_thumbs_up_mute"
 const val KEY_V_SIGN_VOICE = "hm_v_sign_voice"
 const val KEY_IGNORE_BOTTOM = "hm_ignore_bottom"
 const val KEY_WORLD_PINCH = "hm_world_pinch"
+const val KEY_LANDMARK_LOG = "hm_landmark_log"
+const val KEY_CAM_ANTI_FLICKER = "cam_anti_flicker"
+const val KEY_CAM_EXPOSURE = "cam_exposure"
+const val KEY_GESTURE_HINTS = "hm_gesture_hints"
 const val KEY_REC_STREAM = "rec_stream"
 const val KEY_REC_FPS = "rec_fps"
 const val KEY_REC_AUDIO = "rec_audio"

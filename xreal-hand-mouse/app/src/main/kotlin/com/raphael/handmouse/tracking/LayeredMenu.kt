@@ -27,12 +27,16 @@ class LayeredMenuTracker(
     private var filteredY = 0f
     private var selected: MenuAction? = null
     private var pending: MenuAction? = null
-    private var pendingFrames = 0
+    private var pendingSinceMs = 0L
+    private var lastTimestampMs = 0L
     private var deadlineMs = 0L
 
     val isActive: Boolean get() = state == State.OPEN || state == State.AWAIT_CONFIRM
 
-    fun onPalmOpen(palmX: Float, palmY: Float, pinchDown: Boolean): Frame {
+    /** [palmX]/[palmY]: isotropic position ([HandTracker.Result.isoPoints]) — equal travel on X
+     * and Y is equal physical travel. [smoothingAlpha]/[selectionFrames] are per 60fps frame and
+     * scaled by the real frame interval ([FrameTiming]). */
+    fun onPalmOpen(palmX: Float, palmY: Float, pinchDown: Boolean, timestampMs: Long): Frame {
         if (state == State.FIRED) return Frame(false, null, null)
         if (state == State.IDLE) {
             anchorX = palmX
@@ -41,16 +45,17 @@ class LayeredMenuTracker(
             filteredY = palmY
             selected = null
             pending = null
-            pendingFrames = 0
+            pendingSinceMs = timestampMs
         } else {
             // Menu movement is a coarse directional choice, so suppress hand jitter aggressively.
-            filteredX += (palmX - filteredX) * smoothingAlpha
-            filteredY += (palmY - filteredY) * smoothingAlpha
+            val alpha = FrameTiming.alpha(smoothingAlpha, timestampMs - lastTimestampMs)
+            filteredX += (palmX - filteredX) * alpha
+            filteredY += (palmY - filteredY) * alpha
         }
+        lastTimestampMs = timestampMs
         state = State.OPEN
         val dx = filteredX - anchorX
-        // Normalized camera coordinates have a 4:3 aspect ratio. Match physical travel on X/Y.
-        val up = (anchorY - filteredY) * 0.75f
+        val up = anchorY - filteredY
         val candidate = when {
             dx <= -step && abs(dx) > abs(up) * 1.35f -> MenuAction.BACK
             dx >= step && dx > abs(up) * 1.35f -> MenuAction.CLOSE_APP
@@ -58,11 +63,11 @@ class LayeredMenuTracker(
             else -> null
         }
         // Hysteresis prevents flicker near the distance threshold. Diagonal movement stays neutral.
-        if (candidate == pending) pendingFrames++ else {
+        if (candidate != pending) {
             pending = candidate
-            pendingFrames = 1
+            pendingSinceMs = timestampMs
         }
-        if (pendingFrames >= selectionFrames) {
+        if (timestampMs - pendingSinceMs >= FrameTiming.framesToHoldMs(selectionFrames)) {
             if (candidate != null) selected = candidate
             else if ((abs(dx) < step * 0.65f && abs(up) < step * 0.65f) ||
                 (abs(dx) > step && abs(up) > step)) selected = null
@@ -100,7 +105,6 @@ class LayeredMenuTracker(
         state = State.IDLE
         selected = null
         pending = null
-        pendingFrames = 0
     }
 
     private fun fire(): Frame {

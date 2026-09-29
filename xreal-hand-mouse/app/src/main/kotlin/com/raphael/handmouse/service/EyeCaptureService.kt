@@ -37,14 +37,25 @@ import com.raphael.handmouse.capture.PayloadFormat
 import com.raphael.handmouse.capture.UvcCameraHelper
 import com.raphael.handmouse.glasses.GlassesTransport
 import com.raphael.handmouse.glasses.KotlinGlassesProtocol
+import com.raphael.handmouse.imu.GyroHistory
+import com.raphael.handmouse.imu.XrealImuClient
+import com.raphael.handmouse.recording.DatasetRecorder
 import com.raphael.handmouse.recording.EyeRecorder
 import com.raphael.handmouse.recording.EyeSnapshot
+import com.raphael.handmouse.recording.LandmarkLog
 import com.raphael.handmouse.recording.RecordingOutput
 import com.raphael.handmouse.tracking.FrameConverter
 import com.raphael.handmouse.tracking.HandTracker
 import com.raphael.handmouse.tracking.RgbaBufferRing
 import com.raphael.handmouse.util.CameraScanRetryPolicy
 import com.raphael.handmouse.util.KEY_IGNORE_BOTTOM
+import com.raphael.handmouse.util.KEY_LANDMARK_LOG
+import com.raphael.handmouse.util.KEY_DATASET_LABEL
+import com.raphael.handmouse.util.KEY_HEAD_CALIBRATION
+import com.raphael.handmouse.util.KEY_HEAD_COMP
+import com.raphael.handmouse.util.KEY_REC_GYRO_LOG
+import com.raphael.handmouse.util.KEY_CAM_ANTI_FLICKER
+import com.raphael.handmouse.util.KEY_CAM_EXPOSURE
 import com.raphael.handmouse.util.KEY_REC_STREAM
 import com.raphael.handmouse.tracking.HandZone
 import com.raphael.handmouse.util.KEY_TRACKING_ENABLED
@@ -305,6 +316,17 @@ class EyeCaptureService : Service() {
         private const val IDLE_AFTER_MS = 8000L
         private const val IDLE_INFERENCE_FPS = 12
 
+        /** Hand-loss grace (2026-09-28): listeners hear onHandLost only after MediaPipe has
+         * found no hand for this long. Before, ONE hand-less frame reset the whole cursor
+         * pipeline — a drag was dropped where it was and a pressed click cancelled — and
+         * detection drops cluster exactly in pinches and fists, where fingers hide each other.
+         * During the grace the cursor, pinch and drag simply hold. */
+        private const val HAND_LOST_GRACE_MS = 250L
+
+        /** Dataset images are saved only while MediaPipe saw a hand this recently (the result
+         * arrives a frame or two after the image). */
+        private const val DATASET_HAND_RECENT_MS = 300L
+
         /**
          * Eye Tools fork: the single entry point for every recorder/tracking command (tile,
          * notification, hardware button, assistant shortcut, app screen). Tracking is a setting,
@@ -515,17 +537,84 @@ class EyeCaptureService : Service() {
     @Volatile
     private var ignoreBottomFraction = 0f
 
+    /** Per-frame landmark log (setting, off by default) — open while the pipeline runs. */
+    @Volatile
+    private var landmarkLog: LandmarkLog? = null
+
+    private fun applyLandmarkLogPreference() {
+        val want = pipelineActive && prefs.landmarkLog
+        if (want && landmarkLog == null) landmarkLog = LandmarkLog.open(this)
+        if (!want) {
+            landmarkLog?.close()
+            landmarkLog = null
+        }
+        landmarkLog?.label = prefs.datasetLabel
+    }
+
+    /** Gesture images for retraining (setting "hm_dataset_label") — open while the pipeline
+     * runs with a label chosen. Control thread; read on the MJPEG decoder thread. */
+    @Volatile
+    private var datasetRecorder: DatasetRecorder? = null
+
+    private fun applyDatasetPreference() {
+        val label = if (pipelineActive) prefs.datasetLabel else null
+        if (datasetRecorder?.label != label) {
+            datasetRecorder?.close()
+            datasetRecorder = label?.let { DatasetRecorder.open(this, it) }
+        }
+        landmarkLog?.label = label
+    }
+
+    // ---- Glasses IMU (2026-09-29) ----
+    /** Last ~2 s of the glasses' gyro on `System.nanoTime()`'s clock — the cursor's head-motion
+     * compensation reads it ([com.raphael.handmouse.tracking.HeadMotionCompensator]). */
+    val gyroHistory = GyroHistory()
+
+    private val imuClient by lazy {
+        XrealImuClient(this, { log(XrealImuClient.failureMessage(it)) }) { sample, localNs ->
+            recorder.onImuSample(sample, localNs)
+            gyroHistory.add(localNs, sample.gx, sample.gy, sample.gz)
+        }
+    }
+
+    /** Control thread. The IMU link runs only while something uses it: a recording with the
+     * gyro log on, or the calibrated cursor compensation. */
+    private fun applyImuState() {
+        val forRecording = recorder.isRecording && prefs.recordGyroLog
+        val forCursor = trackingEnabled && prefs.headCompensation && prefs.headCalibration != null
+        if (pipelineActive && (forRecording || forCursor)) {
+            imuClient.start()
+        } else {
+            imuClient.stop()
+            gyroHistory.clear()
+        }
+    }
+
+    /** See [HAND_LOST_GRACE_MS]. Posted on [handler] (main) once per hand-less stretch. */
+    private val handLostPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val handLostGraceRunnable = Runnable {
+        handLostPending.set(false)
+        trackingListeners.forEach { it.onHandLost() }
+    }
+
     private var lastNotifUpdateMs = 0L
 
     private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             KEY_TRACKING_ENABLED -> {
                 trackingEnabled = prefs.trackingEnabled
-                controlHandler.post { applyFormatPreference() }
+                controlHandler.post { applyFormatPreference(); applyImuState() }
                 refreshNotification()
             }
+            KEY_REC_GYRO_LOG, KEY_HEAD_COMP, KEY_HEAD_CALIBRATION -> controlHandler.post { applyImuState() }
+            KEY_DATASET_LABEL -> controlHandler.post { applyDatasetPreference() }
             KEY_REC_STREAM -> controlHandler.post { applyFormatPreference() }
             KEY_IGNORE_BOTTOM -> ignoreBottomFraction = prefs.ignoreBottomPct / 100f
+            KEY_LANDMARK_LOG -> controlHandler.post { applyLandmarkLogPreference() }
+            KEY_CAM_ANTI_FLICKER, KEY_CAM_EXPOSURE -> {
+                uvcCameraHelper.cameraControls = prefs.cameraControls
+                controlHandler.post { uvcCameraHelper.applyCameraControls() }
+            }
         }
     }
 
@@ -864,6 +953,7 @@ class EyeCaptureService : Service() {
         uvcCameraHelper.listener = uvcListener
 
         prefs = Prefs(this)
+        uvcCameraHelper.cameraControls = prefs.cameraControls
         trackingEnabled = prefs.trackingEnabled
         ignoreBottomFraction = prefs.ignoreBottomPct / 100f
         prefs.raw.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -964,7 +1054,7 @@ class EyeCaptureService : Service() {
         // toda ativação já enfileirada no controlHandler rodou antes de o executor fechar
         // (submissão pós-shutdown seria rejeitada — enableEyeCamera trata, mas nem chega a
         // acontecer com essa ordem).
-        controlHandler.post { stopPipeline(); glassesConnection.shutdown() }
+        controlHandler.post { stopPipeline(); glassesConnection.shutdown(); imuClient.stop() }
         controlThread.quitSafely()
         // Recorder: closes the open segment cleanly (MKV sizes + cues) before we die.
         // foregroundStarted=false first: the final status it posts must not re-post the
@@ -1080,6 +1170,9 @@ class EyeCaptureService : Service() {
         lastHandSeenMs = SystemClock.uptimeMillis()
         idleInference = false
         applyInferenceFps()
+        applyLandmarkLogPreference()
+        applyDatasetPreference()
+        applyImuState()
 
         // Instância NOVA a cada sessão (ver comentário do campo) — a anterior, se existia, já
         // foi `release()`ada em stopPipeline(). Consumido em [decoderFrameListener], na thread do
@@ -1155,6 +1248,9 @@ class EyeCaptureService : Service() {
         // handTracker.stop() por ÚLTIMO: encerra a HandlerThread usada pela fence acima — se
         // rodasse antes, awaitWorkerDrain não teria mais um Handler vivo pra postar a barreira.
         handTracker.stop()
+        applyLandmarkLogPreference() // pipelineActive=false → closes the log
+        applyDatasetPreference()
+        applyImuState() // → IMU link closed
     }
 
     /** Ver Javadoc da classe ("Fence contra corrida", achado I1). Bloqueia a thread chamadora
@@ -1460,17 +1556,18 @@ class EyeCaptureService : Service() {
                 audio = prefs.recordAudio && micGranted,
                 storage = if (prefs.recordStorage == "app") RecordingOutput.Storage.APP else RecordingOutput.Storage.GALLERY,
                 maxFps = prefs.recordFps,
+                gyroLog = prefs.recordGyroLog,
             ),
         )
         log("Recording started")
-        controlHandler.post { applyFormatPreference() }
+        controlHandler.post { applyFormatPreference(); applyImuState() }
     }
 
     fun stopRecording() {
         if (!recorder.isRecording) return
         recorder.stop()
         log("Recording stopped")
-        controlHandler.post { applyFormatPreference() }
+        controlHandler.post { applyFormatPreference(); applyImuState() }
     }
 
     val isRecording: Boolean get() = ::recorder.isInitialized && recorder.isRecording
@@ -1627,6 +1724,7 @@ class EyeCaptureService : Service() {
             val ring = mjpegRgbaRing ?: return
             try {
                 handTracker.detectAsync(mpImageFrom(bitmap, ring), timestampMs)
+                datasetRecorder?.offer(bitmap, timestampMs, SystemClock.uptimeMillis() - lastHandSeenMs < DATASET_HAND_RECENT_MS)
 
                 // Ver [previewFramesEnabled] — sem preview visível, nenhuma alocação de UI. A CÓPIA
                 // é obrigatória: o bitmap do anel é reutilizado no próximo frame, então não pode ir
@@ -1725,8 +1823,9 @@ class EyeCaptureService : Service() {
 
     private val handTrackerResultListener = object : HandTracker.ResultListener {
         override fun onResult(result: HandTracker.Result) {
+            landmarkLog?.logResult(result)
             if (HandZone.isInBottomZone(result.points, ignoreBottomFraction)) {
-                onHandLost() // hand in the ignored zone (handlebars / desk) = no hand
+                handAbsent() // hand in the ignored zone (handlebars / desk) = no hand
                 return
             }
             lastHandSeenMs = SystemClock.uptimeMillis()
@@ -1734,17 +1833,25 @@ class EyeCaptureService : Service() {
                 idleInference = false
                 applyInferenceFps()
             }
+            if (handLostPending.getAndSet(false)) handler.removeCallbacks(handLostGraceRunnable)
             handler.post { trackingListeners.forEach { it.onHandResult(result) } }
         }
 
         override fun onHandLost() {
+            landmarkLog?.logLost(SystemClock.uptimeMillis())
+            handAbsent()
+        }
+
+        private fun handAbsent() {
             // Idle inference: checked here (called for every hand-less inference) instead of a timer.
             if (!idleInference && SystemClock.uptimeMillis() - lastHandSeenMs > IDLE_AFTER_MS) {
                 idleInference = true
                 applyInferenceFps()
                 Log.d(TAG, "No hand for ${IDLE_AFTER_MS}ms — idle inference at ${IDLE_INFERENCE_FPS}fps")
             }
-            handler.post { trackingListeners.forEach { it.onHandLost() } }
+            if (handLostPending.compareAndSet(false, true)) {
+                handler.postDelayed(handLostGraceRunnable, HAND_LOST_GRACE_MS)
+            }
         }
     }
 

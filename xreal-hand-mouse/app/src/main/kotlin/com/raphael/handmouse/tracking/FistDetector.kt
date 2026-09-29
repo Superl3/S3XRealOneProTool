@@ -1,7 +1,5 @@
 package com.raphael.handmouse.tracking
 
-import kotlin.math.sqrt
-
 /**
  * Detector de PUNHO FECHADO — gesto de recentralização do cursor (2026-07-23, pedido do
  * usuário): segurar o punho fechado por ~2s recentraliza o cursor na tela (o modo relativo
@@ -45,7 +43,7 @@ class FistDetector {
          * outros dedos relaxados/curvados passava do 1.05 e o punho falso ou engolia o clique
          * ou — pior — disparava a recentralização depois de 2s (o "cursor resetou do nada"
          * relatado em hardware). 0.95 exige curl de punho DE VERDADE em todos os dedos. */
-        private const val ENTER_THRESHOLD = 0.95f
+        internal const val ENTER_THRESHOLD = 0.95f
         /** Sai quando o EMA sobe acima disto (gap generoso pra não oscilar). */
         private const val EXIT_THRESHOLD = 1.20f
         private const val EMA_ALPHA = 0.5f
@@ -65,62 +63,66 @@ class FistDetector {
          * (transição punho→thumbs-up solta o punho pro [ThumbsUpDetector] assumir). */
         private const val THUMB_TUCKED_ENTER_MAX = 0.85f
         private const val THUMB_TUCKED_EXIT = 1.0f
-
-        private const val LM_WRIST = 0
-        private const val LM_THUMB_TIP = 4
-        private const val LM_INDEX_MCP = 5
-
-        /** Pares (ponta, PIP) por dedo — indicador, médio, anular, mindinho. */
-        private val FINGER_TIP_PIP = arrayOf(
-            intArrayOf(8, 6),
-            intArrayOf(12, 10),
-            intArrayOf(16, 14),
-            intArrayOf(20, 18),
-        )
     }
 
     private var ema = Float.NaN
     private var thumbEma = Float.NaN
-    private var candidate: Boolean? = null
-    private var candidateFrames = 0
+    private var lastTimestampMs = 0L
+    private val debounce = TimedDebounce()
 
     var isFist: Boolean = false
         private set
 
+    /** Smoothed curl metric (max tip/PIP ratio): ~1.3 open, <[ENTER_THRESHOLD] fist. NaN until
+     * the first update. The pipeline records it to find when the fingers started closing. */
+    val curl: Float get() = ema
+
+    /** 0..1 progress of the pending fist confirmation (the enter debounce); 1 while [isFist].
+     * Drives the cursor ring so the user sees a click coming and can abort by opening the hand. */
+    var enterProgress: Float = 0f
+        private set
+
     /** [landmarks]: 21 pontos (mesma ordem do MediaPipe). Retorna o estado JÁ atualizado
      * ([isFist]) — diferente do [PinchDetector], não há evento de transição: quem cronometra o
-     * hold de 2s é o chamador ([CursorPipeline]), que só precisa do estado por frame. */
-    fun update(landmarks: List<HandPoint>): Boolean {
-        val wrist = landmarks[LM_WRIST]
-        var maxRatio = 0f
-        for (pair in FINGER_TIP_PIP) {
-            val ratio = dist3(wrist, landmarks[pair[0]]) / dist3(wrist, landmarks[pair[1]])
-            if (ratio > maxRatio) maxRatio = ratio
-        }
-        ema = if (ema.isNaN()) maxRatio else EMA_ALPHA * maxRatio + (1f - EMA_ALPHA) * ema
+     * hold de 2s é o chamador ([CursorPipeline]), que só precisa do estado por frame.
+     * [timestampMs]: frame time — EMA and debounce are time-based ([FrameTiming]). */
+    fun update(landmarks: List<HandPoint>, timestampMs: Long): Boolean =
+        update(HandFeatures.from(landmarks), timestampMs)
+
+    /** [allowEnter] = false blocks a NEW fist (another pose owns the hand, or the hand is not
+     * reliably tracked — see [CursorPipeline]); an established fist can still end. */
+    fun update(features: HandFeatures, timestampMs: Long, allowEnter: Boolean = true): Boolean {
+        val dtMs = timestampMs - lastTimestampMs
+        lastTimestampMs = timestampMs
+        ema = FrameTiming.ema(ema, features.maxCurl, EMA_ALPHA, dtMs)
 
         // Veto de polegar (ver THUMB_TUCKED_*): mesma métrica do ThumbsUpDetector, de propósito
         // — os dois detectores enxergam a MESMA fronteira punho↔thumbs-up.
-        val handScale = dist3(wrist, landmarks[LM_INDEX_MCP])
-        val thumbRatio = dist3(landmarks[LM_THUMB_TIP], landmarks[LM_INDEX_MCP]) / handScale
-        thumbEma = if (thumbEma.isNaN()) thumbRatio else EMA_ALPHA * thumbRatio + (1f - EMA_ALPHA) * thumbEma
+        thumbEma = FrameTiming.ema(thumbEma, features.thumbExtension, EMA_ALPHA, dtMs)
 
         val want = when {
-            !isFist && ema < ENTER_THRESHOLD && thumbEma < THUMB_TUCKED_ENTER_MAX -> true
+            !isFist && allowEnter && ema < ENTER_THRESHOLD && thumbEma < THUMB_TUCKED_ENTER_MAX -> true
             isFist && (ema > EXIT_THRESHOLD || thumbEma > THUMB_TUCKED_EXIT) -> false
-            else -> return isFist
+            else -> {
+                // Condition broke: the pending transition starts over. The debounce means N
+                // CONSECUTIVE frames (as documented); the frame counter used to survive these
+                // frames, so scattered qualifying frames added up — and with a clock, a stale
+                // pending entry would confirm instantly on the next qualifying frame.
+                debounce.reset()
+                if (!isFist) enterProgress = 0f
+                return isFist
+            }
         }
 
-        if (candidate != want) {
-            candidate = want
-            candidateFrames = 0
-        }
-        candidateFrames++
         val requiredFrames = if (want) ENTER_DEBOUNCE_FRAMES else EXIT_DEBOUNCE_FRAMES
-        if (candidateFrames < requiredFrames) return isFist
-
-        isFist = want
-        candidate = null
+        val holdMs = FrameTiming.framesToHoldMs(requiredFrames)
+        val confirmed = debounce.confirm(want, timestampMs, holdMs)
+        if (confirmed) isFist = want
+        enterProgress = when {
+            isFist -> 1f
+            want -> debounce.progress(true, timestampMs, holdMs)
+            else -> 0f
+        }
         return isFist
     }
 
@@ -128,15 +130,8 @@ class FistDetector {
     fun reset() {
         ema = Float.NaN
         thumbEma = Float.NaN
-        candidate = null
-        candidateFrames = 0
+        debounce.reset()
         isFist = false
-    }
-
-    private fun dist3(a: HandPoint, b: HandPoint): Float {
-        val dx = a.x - b.x
-        val dy = a.y - b.y
-        val dz = a.z - b.z
-        return sqrt(dx * dx + dy * dy + dz * dz)
+        enterProgress = 0f
     }
 }

@@ -12,6 +12,9 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
+import android.widget.TextView
+import com.raphael.handmouse.R
+import com.raphael.handmouse.tracking.GestureHint
 import kotlin.math.abs
 import kotlin.math.exp
 
@@ -68,6 +71,12 @@ class CursorOverlay(private val hostContext: Context) {
         /** Distância (px) abaixo da qual a posição visível "cola" no alvo — encerra o glide sem
          * rastejar subpixel indefinidamente. */
         private const val SNAP_DISTANCE_PX = 0.5f
+
+        /** Below this offset (px) the cursor pulse alone marks the click. */
+        private const val CLICK_MARKER_MIN_OFFSET_PX = 4f
+
+        /** Space between the cursor and the gesture hint. */
+        private const val HINT_GAP_DP = 6f
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -75,6 +84,10 @@ class CursorOverlay(private val hostContext: Context) {
     private var windowManager: WindowManager? = null
     private var rootView: FrameLayout? = null
     private var cursorView: CursorView? = null
+    private var clickMarkerView: ClickMarkerView? = null
+    private var hintView: TextView? = null
+    /** Current gesture hint (kept across window re-creation) — see [setHint]. */
+    private var hint: GestureHint? = null
     private var layeredMenuView: LayeredMenuView? = null // Eye Tools fork
     private var handDebugView: HandDebugView? = null
     private var debugEnabled = false
@@ -129,6 +142,7 @@ class CursorOverlay(private val hostContext: Context) {
                 }
                 cv.translationX = appliedX - cv.sizePx / 2f
                 cv.translationY = appliedY - cv.sizePx / 2f
+                hintView?.let { positionHint(it, cv) }
             }
             lastFrameNanos = frameTimeNanos
             if (frameLoopActive) {
@@ -159,6 +173,8 @@ class CursorOverlay(private val hostContext: Context) {
 
         val wm = winCtx.getSystemService(WindowManager::class.java)
         val cv = CursorView(winCtx)
+        val marker = ClickMarkerView(winCtx)
+        val hintTv = createHintView(winCtx)
         val layered = LayeredMenuView(winCtx)
         val debug = HandDebugView(winCtx).apply {
             visibility = if (debugEnabled) android.view.View.VISIBLE else android.view.View.GONE
@@ -171,6 +187,8 @@ class CursorOverlay(private val hostContext: Context) {
             addView(dim, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             addView(debug, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             addView(layered, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(marker, FrameLayout.LayoutParams(marker.sizePx, marker.sizePx, Gravity.TOP or Gravity.LEFT))
+            addView(hintTv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.LEFT))
             addView(cv, FrameLayout.LayoutParams(cv.sizePx, cv.sizePx, Gravity.TOP or Gravity.LEFT))
         }
         val lp = WindowManager.LayoutParams(
@@ -198,6 +216,9 @@ class CursorOverlay(private val hostContext: Context) {
             windowManager = wm
             rootView = root
             cursorView = cv
+            clickMarkerView = marker
+            hintView = hintTv
+            applyHint()
             layeredMenuView = layered
             handDebugView = debug
             dimView = dim
@@ -248,6 +269,95 @@ class CursorOverlay(private val hostContext: Context) {
      * ativa. */
     fun pulseClick() {
         cursorView?.pulseClick()
+    }
+
+    /** Click pulse plus, when the click went somewhere other than the cursor (pinch lookback,
+     * fist onset position, magnetic snap), a short marker at the real click point (2026-09-28). */
+    fun pulseClickAt(x: Float, y: Float) {
+        cursorView?.pulseClick()
+        if (!hasTarget || hiddenByUser) return
+        if (abs(x - targetX) < CLICK_MARKER_MIN_OFFSET_PX && abs(y - targetY) < CLICK_MARKER_MIN_OFFSET_PX) return
+        clickMarkerView?.flashAt(x, y)
+    }
+
+    /** Pending fist click progress 0..1 on the cursor ring (0 hides it) — see [CursorView.setFistProgress]. */
+    fun setFistProgress(progress: Float) {
+        cursorView?.setFistProgress(progress)
+    }
+
+    /** Where a pending fist click will land (2026-09-28) — held until [hideClickPreview]. */
+    fun showClickPreview(x: Float, y: Float) {
+        if (hiddenByUser) return
+        clickMarkerView?.holdAt(x, y)
+    }
+
+    fun hideClickPreview() {
+        clickMarkerView?.hideNow()
+    }
+
+    /** "What to do next" line under the cursor ([GestureHint]); `null` hides it. Idempotent. */
+    fun setHint(newHint: GestureHint?) {
+        if (newHint == hint) return
+        hint = newHint
+        applyHint()
+    }
+
+    private fun applyHint() {
+        val v = hintView ?: return
+        val h = hint
+        if (h == null) {
+            v.visibility = android.view.View.GONE
+            return
+        }
+        v.text = hostContext.getString(hintText(h))
+        v.visibility = android.view.View.VISIBLE
+    }
+
+    private fun hintText(h: GestureHint): Int = when (h) {
+        GestureHint.FIST_PENDING -> R.string.hint_fist_pending
+        GestureHint.FIST_PENDING_TOUCH -> R.string.hint_fist_pending_touch
+        GestureHint.FIST_PRESSED -> R.string.hint_fist_pressed
+        GestureHint.NOT_READY_EDGE -> R.string.hint_not_ready_edge
+        GestureHint.NOT_READY -> R.string.hint_not_ready
+        GestureHint.PINCH_PRESSED -> R.string.hint_pinch_pressed
+        GestureHint.PINCH_PRESSED_NO_MENU -> R.string.hint_pinch_pressed_no_menu
+        GestureHint.DRAGGING -> R.string.hint_dragging
+        GestureHint.MENU -> R.string.hint_menu
+        GestureHint.THUMBS_UP -> R.string.hint_thumbs_up
+        GestureHint.V_SIGN -> R.string.hint_v_sign
+        GestureHint.LISTENING -> R.string.hint_listening
+    }
+
+    private fun createHintView(ctx: Context): TextView {
+        val density = ctx.resources.displayMetrics.density
+        return TextView(ctx).apply {
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 13f
+            maxLines = 1
+            val padH = (10 * density).toInt()
+            val padV = (5 * density).toInt()
+            setPadding(padH, padV, padH, padV)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 14f * density
+                setColor(android.graphics.Color.argb(210, 20, 24, 30))
+            }
+            visibility = android.view.View.GONE
+        }
+    }
+
+    /** Centred under the cursor, kept on screen; above the cursor near the bottom edge. Follows
+     * the cursor's visible position and alpha (so fade and mute hide it too). */
+    private fun positionHint(v: TextView, cv: CursorView) {
+        if (v.visibility != android.view.View.VISIBLE) return
+        val root = rootView ?: return
+        val gap = HINT_GAP_DP * v.resources.displayMetrics.density
+        val w = v.width.toFloat()
+        val h = v.height.toFloat()
+        val x = (appliedX - w / 2f).coerceIn(gap, (root.width - w - gap).coerceAtLeast(gap))
+        val below = appliedY + cv.sizePx / 2f + gap
+        v.translationX = x
+        v.translationY = if (below + h > root.height - gap) appliedY - cv.sizePx / 2f - gap - h else below
+        v.alpha = cv.alpha
     }
 
     // ---- Eye Tools fork ----
@@ -392,6 +502,8 @@ class CursorOverlay(private val hostContext: Context) {
         windowManager = null
         rootView = null
         cursorView = null
+        clickMarkerView = null
+        hintView = null
         layeredMenuView = null
         handDebugView = null
         dimView = null

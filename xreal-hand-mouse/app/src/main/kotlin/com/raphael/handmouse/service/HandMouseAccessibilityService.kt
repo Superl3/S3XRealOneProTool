@@ -229,12 +229,23 @@ class HandMouseAccessibilityService : AccessibilityService() {
         // O MESMO GestureInjector serve o cursor (tap/drag) e os gestos de mídia (duplo-tap do
         // seek) — instância única de propósito, o estado de drag dele é um só.
         val gestureInjector = GestureInjector(this)
+        // Eye Tools fork: closes the window under the cursor (palm menu and voice "닫기").
+        val windowController = WindowController(this, gestureInjector)
         val voice = VoiceCommandController(
             service = this,
             appLauncher = AppLauncher(this),
             textInserter = TextInserter(this),
             prefs = prefs,
             overlay = overlay,
+            closeWindow = { displayId ->
+                val sel = lastSelection?.takeIf { it.displayId == displayId }
+                if (sel == null) {
+                    false
+                } else {
+                    val (x, y) = overlay.cursorPosition ?: (sel.width / 2f to sel.height / 2f)
+                    windowController.closeApp(x, y, DisplayBounds(sel.width, sel.height, displayId))
+                }
+            },
         )
         voiceController = voice
         cursorPipeline = CursorPipeline(
@@ -250,7 +261,6 @@ class HandMouseAccessibilityService : AccessibilityService() {
             listener = dexDisplayListener
         }
         // Eye Tools fork: palm-menu actions.
-        val windowController = WindowController(this, gestureInjector)
         cursorPipeline.menuActionHandler = CursorPipeline.MenuActionHandler { action, x, y, display ->
             when (action) {
                 MenuAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
@@ -334,6 +344,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
      * Javadoc dele. Idempotente (o registro do lado de lá é um Set). */
     fun attachTo(captureService: EyeCaptureService) {
         captureService.addTrackingListener(cursorPipeline)
+        cursorPipeline.gyroHistory = captureService.gyroHistory
     }
 
     /** Ver Javadoc de [CursorPipeline] ("Supressão de injeção", achado Important I4) - chamado

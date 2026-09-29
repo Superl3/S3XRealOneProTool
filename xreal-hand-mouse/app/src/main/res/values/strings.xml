@@ -30,7 +30,7 @@
     <string name="countdown_accept_usb_prompt">Accept the USB prompt now — %1$ds</string>
     <string name="accessibility_steps">1. Tap \"Open Accessibility Settings\" below\n2. Find \"XREAL Eye Tools\" in the list\n3. Enable it and confirm</string>
     <string name="section_gestures">GESTURES</string>
-    <string name="gestures_list">Move hand — cursor (trackpad style)\nShort pinch or fist — tap; two short pinches — double tap\nHold pinch and move — drag\nStationary long pinch — menu; move left/up/right, then pinch to confirm\nFist in menu — cancel; hold fist 2s to recenter cursor</string>
+    <string name="gestures_list">Move hand — cursor (trackpad style)\nShort pinch or fist — tap; two short pinches — double tap\nHold pinch and move — drag\nStationary long pinch — menu; move left/up/right, then pinch to confirm\nFist in menu — cancel; hold fist 2s to recenter cursor (setting, off by default)</string>
     <string name="section_voice_commands">VOICE COMMANDS</string>
     <string name="voice_commands_list_en">Back — go back\nHome / Close — go to home screen\nRecents — open recent apps\nSend — press Enter\nClear — clear text\nOpen &lt;app name&gt; — launch an app\nWrite &lt;text&gt; — dictate text</string>
     <string name="voice_commands_list_ko">뒤로 — go back\n홈 / 닫기 — go to home screen\n최근 앱 — open recent apps\n전송 — press Enter\n모두 지우기 — clear text\n열기 &lt;앱 이름&gt; — launch an app\n쓰기 &lt;텍스트&gt; — dictate text</string>
@@ -97,6 +97,8 @@
     <string name="notif_tracking_off">Tracking off</string>
     <string name="notif_tracking_on">Tracking on</string>
     <string name="pref_cat_gestures">Gestures</string>
+    <string name="pref_fist_touch">Fist = touch down</string>
+    <string name="pref_fist_touch_sum">The fist presses and holds until you open it: quick fist = tap, held = long press, move the closed hand = drag. Off: the fist taps as it closes. Turns off the fist-hold recenter.</string>
     <string name="pref_fist_recenter">Fist hold 2 s → recenter cursor</string>
     <string name="pref_thumbs_up">Thumbs-up 1 s → hide/show cursor</string>
     <string name="pref_thumbs_up_sum">Hold 1 s to switch the cursor off / on (e.g. while resting your hands)</string>
@@ -195,6 +197,22 @@
     <string name="pref_magnetic_click_sum">At click time, tap inside a nearby accessible button. Falls back to the original point on unsupported screens.</string>
     <string name="pref_debug_overlay">Hand tracking debug overlay</string>
     <string name="pref_debug_overlay_sum">Show hand skeleton, pinch and fist state, cursor position and click correction on DeX.</string>
+    <string name="pref_gesture_hints">Gesture hints</string>
+    <string name="pref_gesture_hints_sum">While a gesture is in progress, show what to do next under the cursor on DeX.</string>
+    <string name="hint_fist_pending">Hold → tap · open hand to cancel</string>
+    <string name="hint_fist_pending_touch">Hold → press · open hand to cancel</string>
+    <string name="hint_fist_pressed">Open hand → release · move → drag</string>
+    <string name="hint_not_ready_edge">Hand at the camera edge — move it inward</string>
+    <string name="hint_not_ready">Hand unclear — show the whole hand</string>
+    <string name="hint_pinch_pressed">Release → tap · move → drag · hold still → menu</string>
+    <string name="hint_pinch_pressed_no_menu">Release → tap · hold → drag</string>
+    <string name="hint_dragging">Release pinch → drop</string>
+    <string name="hint_menu">← back  ↑ home  → close window · pinch = confirm · fist = cancel</string>
+    <string name="hint_thumbs_up">Hold → cursor off</string>
+    <string name="hint_v_sign">Hold → voice command</string>
+    <string name="hint_listening">Say: back · home · close · open &lt;app&gt; · write &lt;text&gt;</string>
+    <string name="pref_landmark_log">Hand landmark log</string>
+    <string name="pref_landmark_log_sum">Save every hand-tracking frame (landmarks, handedness, timing) as JSONL in the app folder (Android/data/…/files/landmarks) for tuning.</string>
     <string name="pref_palm_menu_sum">Hold a stationary pinch for 0.9s, move left/up/right to choose, then pinch</string>
     <string name="pref_add_tiles_sum">One-time: adds the Eye record and Eye photo tiles to the quick panel</string>
     <string name="sc_tracking_on">Hand tracking on</string>
@@ -211,12 +229,40 @@
     </string-array>
     <string name="pref_rec_fps">Recording frame rate</string>
     <string-array name="rec_fps_entries">
-        <item>30 fps — about 6.5 GB per hour (recommended)</item>
-        <item>60 fps — about 13 GB per hour</item>
+        <item>30 fps — about 9–14 GB per hour (measured; recommended)</item>
+        <item>60 fps — about 19–28 GB per hour</item>
     </string-array>
     <string-array name="rec_fps_values" translatable="false">
         <item>30</item>
         <item>60</item>
+    </string-array>
+    <string name="pref_cam_anti_flicker">Camera anti-flicker</string>
+    <string-array name="cam_anti_flicker_entries">
+        <item>Camera default</item>
+        <item>Off</item>
+        <item>50 Hz</item>
+        <item>60 Hz (Korea, US)</item>
+    </string-array>
+    <string-array name="cam_anti_flicker_values" translatable="false">
+        <item>-1</item>
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+    <string name="pref_cam_exposure">Camera exposure</string>
+    <string-array name="cam_exposure_entries">
+        <item>Auto (camera default)</item>
+        <item>1/250 s — sharper motion, darker</item>
+        <item>1/120 s</item>
+        <item>1/60 s</item>
+        <item>1/30 s — brightest at night, more motion blur (may halve the frame rate)</item>
+    </string-array>
+    <string-array name="cam_exposure_values" translatable="false">
+        <item>0</item>
+        <item>40</item>
+        <item>83</item>
+        <item>166</item>
+        <item>300</item>
     </string-array>
     <string name="pref_cat_display">Display</string>
     <string name="pref_dim_auto">Auto-dim the glasses from the phone light sensor</string>
@@ -234,4 +280,56 @@
     <string name="conn_manual_camera_failed">The camera did not start. Tap Connect to try again; replug the glasses if it keeps failing.</string>
     <string name="conn_usb_permission_busy">USB permission did not complete. Tap Connect to retry.</string>
     <string name="conn_capture_stopped">Disconnected</string>
+
+    <!-- Glasses IMU, recording enhancer, gesture dataset (2026-09-29) -->
+    <string name="pref_head_comp">Head-motion compensation</string>
+    <string name="pref_head_comp_sum">Removes the cursor movement that turning your head causes, using the glasses\' gyro. Needs a calibration: record a few minutes with the gyro log on while looking around, then enhance that recording. Assumes the hand stays put while the head turns — turning your whole body moves the cursor the other way.</string>
+    <string name="pref_head_comp_status_none">Not calibrated yet.</string>
+    <string name="pref_head_comp_status">Calibrated: latency %1$d ms, fit R² %2$.2f (%3$d frames).</string>
+    <string name="pref_dataset_label">Gesture dataset label</string>
+    <string name="pref_dataset_label_sum">%s. While a label is set, tracked hand frames are saved every 0.2 s to Android/data/io.github.xrealeyetools/files/dataset/&lt;label&gt;/ for retraining the gesture model (tools/train_gesture_recognizer.py). MJPEG stream only.</string>
+    <string-array name="dataset_label_entries">
+        <item>Off</item>
+        <item>No gesture (none)</item>
+        <item>Closed fist</item>
+        <item>Open palm</item>
+        <item>Pinch</item>
+        <item>Victory (V)</item>
+        <item>Thumb up</item>
+    </string-array>
+    <string-array name="dataset_label_values" translatable="false">
+        <item>off</item>
+        <item>none</item>
+        <item>closed_fist</item>
+        <item>open_palm</item>
+        <item>pinch</item>
+        <item>victory</item>
+        <item>thumb_up</item>
+    </string-array>
+    <string name="pref_rec_gyro_log">Gyro log (.gcsv)</string>
+    <string name="pref_rec_gyro_log_sum">Saves the glasses\' gyro next to each recording (Documents/XrealEye with gallery storage, the app folder otherwise; about 110 MB per hour). Gyroflow reads it; the enhancer uses it to stabilize and to calibrate the head-motion compensation.</string>
+    <string name="pref_enhance_delete_original">Delete originals after enhancing</string>
+    <string name="pref_enhance_delete_original_sum">Once the enhanced MP4 is written and reads back correctly, the MKV and its gyro log are deleted. Off: both are kept.</string>
+    <string name="btn_enhance">Enhance recordings</string>
+    <string name="btn_enhance_running">Enhancing %1$d/%2$d · %3$d%%</string>
+    <string name="enhance_dialog_title">Recordings to enhance</string>
+    <string name="enhance_item_gyro">gyro log</string>
+    <string name="enhance_start_delete">Enhance, delete originals</string>
+    <string name="enhance_start_keep">Enhance, keep originals</string>
+    <string name="enhance_none">No recordings left to enhance.</string>
+    <string name="enhance_busy_recording">Stop the recording first — enhancing competes with it for the encoder.</string>
+    <string name="enhance_cancel_title">Stop enhancing?</string>
+    <string name="enhance_cancel_msg">The file being processed is left as it was.</string>
+    <string name="enhance_cancel">Stop</string>
+    <string name="enhance_keep_going">Keep going</string>
+    <string name="notif_channel_enhance">Recording enhancement</string>
+    <string name="enhance_notif_title">Enhancing recording %1$d of %2$d</string>
+    <string name="enhance_notif_analyzing">%1$s · analysing %2$d%%</string>
+    <string name="enhance_notif_encoding">%1$s · encoding %2$d%%</string>
+    <string name="enhance_done_title">Enhancement finished</string>
+    <string name="enhance_summary">%1$d enhanced, %2$d skipped, %3$d failed</string>
+    <string name="enhance_summary_saved">%1$s freed</string>
+    <string name="enhance_stop_cancelled">stopped</string>
+    <string name="enhance_stop_timeout">stopped by Android\'s background time limit</string>
+    <string name="enhance_stop_recording">stopped because a recording started</string>
 </resources>

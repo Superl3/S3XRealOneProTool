@@ -15,6 +15,9 @@ import com.raphael.handmouse.util.KEY_BTN_PHOTO
 import com.raphael.handmouse.util.KEY_BTN_RECORD
 import com.raphael.handmouse.util.KEY_BTN_TRACKING
 import com.raphael.handmouse.util.KEY_DIM_START_LUX
+import com.raphael.handmouse.util.KEY_HEAD_CALIBRATION
+import com.raphael.handmouse.util.KEY_HEAD_COMP
+import com.raphael.handmouse.util.Prefs
 import com.raphael.handmouse.util.PREFS_FILE_NAME
 
 /**
@@ -48,6 +51,7 @@ class SettingsActivity : AppCompatActivity() {
 
         private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key in buttonKeys) refreshButtonSummaries()
+            if (key == KEY_HEAD_CALIBRATION) refreshHeadCompSummary()
         }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -83,6 +87,7 @@ class SettingsActivity : AppCompatActivity() {
             super.onResume()
             preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(listener)
             refreshButtonSummaries()
+            refreshHeadCompSummary()
             sensorManager = requireContext().getSystemService(SensorManager::class.java)
             val light = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
             if (light == null || sensorManager?.registerListener(
@@ -120,6 +125,14 @@ class SettingsActivity : AppCompatActivity() {
                 ) { ask(i + 1) }
             }
             ask(0)
+        }
+
+        /** The head-motion compensation's description plus the stored calibration (the enhancer writes it). */
+        private fun refreshHeadCompSummary() {
+            val cal = Prefs(requireContext()).headCalibration
+            val status = if (cal == null) getString(R.string.pref_head_comp_status_none)
+            else getString(R.string.pref_head_comp_status, cal.latencyMs, cal.r2, cal.frames)
+            findPreference<Preference>(KEY_HEAD_COMP)?.summary = getString(R.string.pref_head_comp_sum) + "\n" + status
         }
 
         private fun refreshButtonSummaries() {

@@ -29,11 +29,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.raphael.handmouse.capture.GlassesConnection
 import com.raphael.handmouse.capture.UsbPermissionRequests
+import com.raphael.handmouse.enhance.EnhanceService
+import com.raphael.handmouse.enhance.VideoEnhancer
 import com.raphael.handmouse.overlay.DexDisplayMonitor
 import com.raphael.handmouse.recording.EyeRecorder
+import com.raphael.handmouse.recording.RecordingOutput
 import com.raphael.handmouse.service.EyeCaptureService
 import com.raphael.handmouse.service.HandMouseAccessibilityService
-import com.raphael.handmouse.tracking.HandPoint
 import com.raphael.handmouse.tracking.HandTracker
 import com.raphael.handmouse.tracking.PinchDetector
 import com.raphael.handmouse.tracking.PinchEvent
@@ -51,7 +53,7 @@ import com.raphael.handmouse.util.Prefs
  * só pra colorir o HUD de debug (a lógica de cursor/clique real é Tarefa 4/5).
  */
 class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCaptureService.TrackingListener,
-    EyeCaptureService.RecorderStatusListener {
+    EyeCaptureService.RecorderStatusListener, EnhanceService.Listener {
 
     companion object {
         private const val HANDSHAKE_WARNING_SECONDS = 10
@@ -122,6 +124,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     private lateinit var btnOpenLastRecording: Button
     private lateinit var btnOpenSettings: Button
     private lateinit var btnStopCapture: Button
+    private lateinit var btnEnhance: Button
     private var lastRecordingUri: Uri? = null
 
     // Só para o HUD de debug (cor do esqueleto) — a lógica de cursor/clique real (Tarefa 4/5)
@@ -240,6 +243,8 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         btnOpenLastRecording = findViewById(R.id.btnOpenLastRecording)
         btnOpenSettings = findViewById(R.id.btnOpenSettings)
         btnStopCapture = findViewById(R.id.btnStopCapture)
+        btnEnhance = findViewById(R.id.btnEnhanceRecordings)
+        btnEnhance.setOnClickListener { onEnhanceClicked() }
 
         btnRecord.setOnClickListener { toggleRecording() }
         findViewById<Button>(R.id.btnPhoto).setOnClickListener {
@@ -331,6 +336,8 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         EyeCaptureService.stateListener = this
         EyeCaptureService.recorderListener = this
         onRecorderStatus(EyeCaptureService.getInstance()?.recorderStatus ?: EyeRecorder.Status())
+        EnhanceService.listener = this
+        onEnhanceStatus(EnhanceService.status)
         EyeCaptureService.getInstance()?.let { service ->
             // Sincroniza o estado ATUAL na hora do registro (fix 2026-07-23, "status preso em
             // 'Permissões OK'"): o listener só recebe TRANSIÇÕES — uma Activity (re)criada com
@@ -374,6 +381,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         super.onPause()
         EyeCaptureService.stateListener = null
         EyeCaptureService.recorderListener = null
+        EnhanceService.listener = null
         EyeCaptureService.getInstance()?.removeTrackingListener(this)
         // Em background ninguém desenha o preview — desliga a alocação por frame no serviço
         // (onResume religa via setPreviewVisible conforme a preferência salva).
@@ -706,8 +714,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     }
 
     override fun onHandResult(result: HandTracker.Result) {
-        val points = result.landmarks.map { HandPoint(it.x(), it.y(), it.z()) }
-        val pinchEvent = debugPinchDetector.update(points)
+        val pinchEvent = debugPinchDetector.update(result.isoPoints, result.timestampMs)
         if (pinchEvent != null) {
             appendLog("Pinch: $pinchEvent")
         }
@@ -781,6 +788,69 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
             setDataAndType(uri, contentResolver.getType(uri) ?: "video/*")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })
+    }
+
+    // --- Eye Tools fork: recording enhancer (2026-09-29) ---
+
+    override fun onEnhanceStatus(status: EnhanceService.Status) {
+        btnEnhance.text = if (status.running) {
+            getString(R.string.btn_enhance_running, status.index, status.total, (status.fraction * 100).toInt())
+        } else {
+            getString(R.string.btn_enhance)
+        }
+    }
+
+    override fun onEnhanceLog(line: String) = appendLog("Enhance: $line")
+
+    /** Idle: pick recordings (none checked: the default deletes originals) and start. Running: offer to stop. */
+    private fun onEnhanceClicked() {
+        if (EnhanceService.status.running) {
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.enhance_cancel_title)
+                .setMessage(R.string.enhance_cancel_msg)
+                .setPositiveButton(R.string.enhance_cancel) { _, _ -> EnhanceService.cancel(this) }
+                .setNegativeButton(R.string.enhance_keep_going, null)
+                .show()
+            return
+        }
+        if (EyeCaptureService.getInstance()?.isRecording == true) {
+            appendLog(getString(R.string.enhance_busy_recording))
+            return
+        }
+        btnEnhance.isEnabled = false
+        Thread {
+            val output = RecordingOutput(this)
+            val candidates = output.listRecordings()
+                .filter { !output.exists(it.storage, VideoEnhancer.outputName(it.displayName)) }
+            val gyro = candidates.map { rec -> output.openSidecar(rec.displayName)?.use { true } ?: false }
+            runOnUiThread {
+                btnEnhance.isEnabled = true
+                if (!isFinishing && !isDestroyed) showEnhanceDialog(candidates, gyro)
+            }
+        }.start()
+    }
+
+    private fun showEnhanceDialog(candidates: List<RecordingOutput.Recording>, gyro: List<Boolean>) {
+        if (candidates.isEmpty()) {
+            appendLog(getString(R.string.enhance_none))
+            return
+        }
+        val labels = candidates.mapIndexed { i, rec ->
+            val size = android.text.format.Formatter.formatShortFileSize(this, rec.sizeBytes)
+            rec.displayName + "\n" + size + if (gyro[i]) " · " + getString(R.string.enhance_item_gyro) else ""
+        }.toTypedArray<CharSequence>()
+        val checked = BooleanArray(candidates.size)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.enhance_dialog_title)
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton(if (prefs.enhanceDeleteOriginal) R.string.enhance_start_delete else R.string.enhance_start_keep) { _, _ ->
+                val picked = candidates.filterIndexed { i, _ -> checked[i] }
+                if (picked.isNotEmpty() && !EnhanceService.start(this, picked)) {
+                    appendLog(getString(R.string.enhance_busy_recording))
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun appendLog(message: String) {

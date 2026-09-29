@@ -15,6 +15,11 @@ import org.junit.Test
  */
 class VSignDetectorTest {
 
+    /** Frame timestamps 60fps apart — the frame counts in these tests are 60fps frames (the
+     * detectors are time-based since 2026-09-28, see [FrameTiming]). */
+    private var frame = 0
+    private fun ts(): Long = frame++ * 1000L / 60
+
     private fun landmarks(
         indexRatio: Float,
         middleRatio: Float = indexRatio,
@@ -38,17 +43,17 @@ class VSignDetectorTest {
     @Test
     fun `sinal de V confirma apos 12 frames sustentados`() {
         val detector = VSignDetector()
-        repeat(11) { assertFalse("frame ${it + 1} ainda não confirma", detector.update(vSign())) }
-        assertTrue(detector.update(vSign()))
+        repeat(11) { assertFalse("frame ${it + 1} ainda não confirma", detector.update(vSign(), ts())) }
+        assertTrue(detector.update(vSign(), ts()))
         assertTrue(detector.isVSign)
     }
 
     @Test
     fun `pose transitoria nao confirma`() {
         val detector = VSignDetector()
-        repeat(6) { detector.update(vSign()) }
+        repeat(6) { detector.update(vSign(), ts()) }
         assertFalse(detector.isVSign)
-        repeat(5) { detector.update(landmarks(indexRatio = 1.35f, ringRatio = 1.35f)) }
+        repeat(5) { detector.update(landmarks(indexRatio = 1.35f, ringRatio = 1.35f), ts()) }
         assertFalse(detector.isVSign)
     }
 
@@ -56,14 +61,14 @@ class VSignDetectorTest {
     fun `palma aberta (todos estendidos) nunca vira V`() {
         val detector = VSignDetector()
         val palm = landmarks(indexRatio = 1.35f, ringRatio = 1.35f)
-        repeat(20) { assertFalse(detector.update(palm)) }
+        repeat(20) { assertFalse(detector.update(palm, ts())) }
     }
 
     @Test
     fun `punho (todos dobrados) nunca vira V`() {
         val detector = VSignDetector()
         val fist = landmarks(indexRatio = 0.9f, ringRatio = 0.9f)
-        repeat(20) { assertFalse(detector.update(fist)) }
+        repeat(20) { assertFalse(detector.update(fist, ts())) }
     }
 
     @Test
@@ -71,17 +76,17 @@ class VSignDetectorTest {
         // A mão de quem aponta o cursor: médio semi-dobrado — o MIN(indicador, médio) manda.
         val detector = VSignDetector()
         val pointing = landmarks(indexRatio = 1.35f, middleRatio = 1.05f, ringRatio = 0.95f)
-        repeat(20) { assertFalse(detector.update(pointing)) }
+        repeat(20) { assertFalse(detector.update(pointing, ts())) }
     }
 
     @Test
     fun `oscilacao dentro da histerese nao alterna o estado`() {
         val detector = VSignDetector()
-        repeat(12) { detector.update(vSign()) }
+        repeat(12) { detector.update(vSign(), ts()) }
         assertTrue(detector.isVSign)
         // Estendidos caem até a zona morta (1.10 < ext < 1.25) — não deve soltar.
         for (ext in listOf(1.20f, 1.15f, 1.22f, 1.12f)) {
-            detector.update(landmarks(indexRatio = ext, ringRatio = 0.9f))
+            detector.update(landmarks(indexRatio = ext, ringRatio = 0.9f), ts())
             assertTrue("ext=$ext não deveria soltar o V", detector.isVSign)
         }
     }
@@ -89,26 +94,26 @@ class VSignDetectorTest {
     @Test
     fun `dobrar o medio solta o V apos 3 frames`() {
         val detector = VSignDetector()
-        repeat(12) { detector.update(vSign()) }
+        repeat(12) { detector.update(vSign(), ts()) }
         assertTrue(detector.isVSign)
         // 0.5 derruba o EMA do min(estendidos) abaixo de 1.10 já no 1º frame
         // (0.5*0.5 + 0.5*1.35 = 0.925) — confirmação em exatamente 3 chamadas.
         val dropped = landmarks(indexRatio = 1.35f, middleRatio = 0.5f, ringRatio = 0.9f)
-        detector.update(dropped)
-        detector.update(dropped)
+        detector.update(dropped, ts())
+        detector.update(dropped, ts())
         assertTrue(detector.isVSign)
-        detector.update(dropped)
+        detector.update(dropped, ts())
         assertFalse(detector.isVSign)
     }
 
     @Test
     fun `reset limpa estado e exige debounce completo de novo`() {
         val detector = VSignDetector()
-        repeat(12) { detector.update(vSign()) }
+        repeat(12) { detector.update(vSign(), ts()) }
         assertTrue(detector.isVSign)
         detector.reset()
         assertFalse(detector.isVSign)
-        repeat(11) { assertFalse(detector.update(vSign())) }
-        assertTrue(detector.update(vSign()))
+        repeat(11) { assertFalse(detector.update(vSign(), ts())) }
+        assertTrue(detector.update(vSign(), ts()))
     }
 }

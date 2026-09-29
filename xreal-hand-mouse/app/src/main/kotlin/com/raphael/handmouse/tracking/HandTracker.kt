@@ -64,7 +64,26 @@ class HandTracker {
         /** Metric 3D landmarks (metres, hand-centred) — rotation-robust pinch (Eye Tools fork).
          * Empty when the model did not provide them. */
         val worldLandmarks: List<HandPoint> = emptyList(),
-    )
+        /** Size of the image MediaPipe saw (0 when unknown). */
+        val imageWidth: Int = 0,
+        val imageHeight: Int = 0,
+        /** [points] with y rescaled to image-WIDTH units (y × height/width), so a distance means
+         * the same physical length in any direction (2026-09-28). Normalized x is divided by the
+         * width and y by the height; on the Eye's 16:9 stream a vertical distance came out 1.78×
+         * a horizontal one of the same length, so ratios mixing directions (pinch, thumb) swung
+         * with hand orientation. MediaPipe's z is already on the x scale. Geometry (detectors,
+         * cursor, menu) uses this; image-space consumers (bottom zone, debug skeleton) keep
+         * [points]. */
+        val isoPoints: List<HandPoint> = isotropic(points, imageWidth, imageHeight),
+    ) {
+        companion object {
+            fun isotropic(points: List<HandPoint>, width: Int, height: Int): List<HandPoint> {
+                if (width <= 0 || height <= 0) return points
+                val yScale = height.toFloat() / width
+                return points.map { HandPoint(it.x, it.y * yScale, it.z) }
+            }
+        }
+    }
 
     interface ResultListener {
         fun onResult(result: Result)
@@ -250,6 +269,8 @@ class HandTracker {
                     latencyMs = latency,
                     inferenceFps = inferenceFpsEma,
                     worldLandmarks = world,
+                    imageWidth = image.width,
+                    imageHeight = image.height,
                 )
             )
         } finally {

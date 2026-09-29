@@ -7,7 +7,7 @@
     <string name="notif_capture_text">Eye 카메라 캡처 중</string>
     <string name="accessibility_steps">1. 아래 \"접근성 설정 열기\"를 누르세요\n2. 목록에서 \"XREAL Eye Tools\"를 찾으세요\n3. 켜고 확인하세요</string>
     <string name="btn_open_accessibility_settings">접근성 설정 열기</string>
-    <string name="gestures_list">손 이동 — 커서 (트랙패드 방식)\n짧은 핀치 또는 주먹 — 탭, 짧은 핀치 두 번 — 더블탭\n핀치 유지하며 이동 — 드래그\n제자리에서 롱 핀치 — 메뉴 → 손을 좌/상/우로 → 핀치로 확정\n메뉴에서 주먹 — 취소, 주먹 2초 유지 — 커서 중앙 정렬</string>
+    <string name="gestures_list">손 이동 — 커서 (트랙패드 방식)\n짧은 핀치 또는 주먹 — 탭, 짧은 핀치 두 번 — 더블탭\n핀치 유지하며 이동 — 드래그\n제자리에서 롱 핀치 — 메뉴 → 손을 좌/상/우로 → 핀치로 확정\n메뉴에서 주먹 — 취소, 주먹 2초 유지 — 커서 중앙 정렬 (설정, 기본 꺼짐)</string>
 
     <string name="status_idle">권한 대기 중…</string>
     <string name="btn_grant_permissions">1. 권한 허용</string>
@@ -85,6 +85,8 @@
     <string name="notif_tracking_off">추적 끄기</string>
     <string name="notif_tracking_on">추적 켜기</string>
     <string name="pref_cat_gestures">제스처</string>
+    <string name="pref_fist_touch">주먹 = 터치 누르기</string>
+    <string name="pref_fist_touch_sum">주먹을 쥐면 누르고, 펼 때까지 누른 채 유지합니다: 짧게 = 탭, 오래 = 길게 누르기, 쥔 채 움직이면 드래그. 끄면 쥐는 순간 탭합니다. 켜면 주먹 2초 가운데 이동은 꺼집니다.</string>
     <string name="pref_fist_recenter">주먹 2초 → 커서 가운데로</string>
     <string name="pref_thumbs_up">엄지척 1초 → 커서 숨김/표시</string>
     <string name="pref_thumbs_up_sum">1초 유지하면 커서 끄기 / 켜기 (손을 쉴 때 등)</string>
@@ -166,6 +168,22 @@
     <string name="pref_magnetic_click_sum">클릭 순간 접근성에서 찾은 가까운 버튼의 안쪽을 탭합니다. 지원하지 않는 화면은 원래 위치를 탭합니다.</string>
     <string name="pref_debug_overlay">손 인식 디버그 표시</string>
     <string name="pref_debug_overlay_sum">DeX 화면에 손 뼈대, 핀치·주먹 상태, 커서 좌표와 클릭 보정 결과를 표시합니다.</string>
+    <string name="pref_gesture_hints">제스처 안내</string>
+    <string name="pref_gesture_hints_sum">제스처를 하는 동안 다음에 할 수 있는 동작을 DeX 커서 아래에 표시합니다.</string>
+    <string name="hint_fist_pending">유지 → 탭 · 펴면 취소</string>
+    <string name="hint_fist_pending_touch">유지 → 누르기 · 펴면 취소</string>
+    <string name="hint_fist_pressed">펴면 놓기 · 움직이면 드래그</string>
+    <string name="hint_not_ready_edge">손이 카메라 가장자리 — 안쪽으로</string>
+    <string name="hint_not_ready">손이 불분명 — 손 전체가 보이게</string>
+    <string name="hint_pinch_pressed">떼면 탭 · 움직이면 드래그 · 가만히 → 메뉴</string>
+    <string name="hint_pinch_pressed_no_menu">떼면 탭 · 유지하면 드래그</string>
+    <string name="hint_dragging">핀치를 떼면 놓기</string>
+    <string name="hint_menu">←뒤로 ↑홈 →창 닫기 · 핀치 확정 · 주먹 취소</string>
+    <string name="hint_thumbs_up">유지 → 커서 끄기</string>
+    <string name="hint_v_sign">유지 → 음성 명령</string>
+    <string name="hint_listening">말하기: 뒤로 · 홈 · 닫기 · 열기 앱 · 쓰기 문장</string>
+    <string name="pref_landmark_log">손 랜드마크 기록</string>
+    <string name="pref_landmark_log_sum">튜닝용으로 손 추적 프레임마다 랜드마크·좌우 손·시각을 앱 폴더(Android/data/…/files/landmarks)에 JSONL로 저장합니다.</string>
     <string name="pref_palm_menu_sum">제자리에서 0.9초 핀치 → 손을 좌/상/우로 움직여 뒤로 / 홈 / 창 닫기 선택 → 핀치</string>
     <string name="pref_add_tiles_sum">한 번만: 폰 빠른 패널에 Eye 녹화 / Eye 사진 타일 추가</string>
     <string name="sc_tracking_on">손 추적 켜기</string>
@@ -182,8 +200,23 @@
     </string-array>
     <string name="pref_rec_fps">녹화 프레임</string>
     <string-array name="rec_fps_entries">
-        <item>30fps — 시간당 약 6.5GB (권장)</item>
-        <item>60fps — 시간당 약 13GB</item>
+        <item>30fps — 시간당 약 9~14GB (실측, 권장)</item>
+        <item>60fps — 시간당 약 19~28GB</item>
+    </string-array>
+    <string name="pref_cam_anti_flicker">카메라 깜빡임 방지</string>
+    <string-array name="cam_anti_flicker_entries">
+        <item>카메라 기본값</item>
+        <item>끔</item>
+        <item>50Hz</item>
+        <item>60Hz (한국)</item>
+    </string-array>
+    <string name="pref_cam_exposure">카메라 노출</string>
+    <string-array name="cam_exposure_entries">
+        <item>자동 (카메라 기본값)</item>
+        <item>1/250초 — 움직임 선명, 어두움</item>
+        <item>1/120초</item>
+        <item>1/60초</item>
+        <item>1/30초 — 밤에 가장 밝음, 움직임 번짐 (프레임이 절반으로 줄 수 있음)</item>
     </string-array>
     <string name="pref_cat_display">디스플레이</string>
     <string name="pref_dim_auto">폰 조도 센서로 안경 화면 자동 디밍</string>
@@ -201,4 +234,47 @@
     <string name="conn_manual_camera_failed">카메라가 시작되지 않았습니다. 연결 버튼으로 다시 시도하고, 계속 실패하면 안경을 다시 꽂으세요.</string>
     <string name="conn_usb_permission_busy">USB 권한 요청이 완료되지 않았습니다. 연결 버튼을 눌러 다시 시도하세요.</string>
     <string name="conn_capture_stopped">연결 해제됨</string>
+
+    <!-- 안경 IMU, 녹화 보정, 제스처 데이터셋 (2026-09-29) -->
+    <string name="pref_head_comp">머리 움직임 보정</string>
+    <string name="pref_head_comp_sum">안경 자이로로 고개를 돌려서 생기는 커서 움직임을 없앱니다. 보정값이 필요합니다: 자이로 로그를 켠 채 주변을 둘러보며 몇 분 녹화하고, 그 녹화를 보정하세요. 고개를 돌리는 동안 손은 제자리에 있다고 가정하므로, 몸 전체를 돌리면 커서가 반대로 움직입니다.</string>
+    <string name="pref_head_comp_status_none">아직 보정값이 없습니다.</string>
+    <string name="pref_head_comp_status">보정값: 지연 %1$d ms, 적합도 R² %2$.2f (%3$d 프레임).</string>
+    <string name="pref_dataset_label">제스처 데이터셋 라벨</string>
+    <string name="pref_dataset_label_sum">%s. 라벨을 고르면 손이 추적되는 동안 0.2초마다 프레임을 Android/data/io.github.xrealeyetools/files/dataset/&lt;라벨&gt;/에 저장합니다 (제스처 모델 재학습용, tools/train_gesture_recognizer.py). MJPEG 스트림에서만 동작합니다.</string>
+    <string-array name="dataset_label_entries">
+        <item>끄기</item>
+        <item>제스처 없음 (none)</item>
+        <item>주먹</item>
+        <item>편 손바닥</item>
+        <item>핀치</item>
+        <item>브이</item>
+        <item>엄지 척</item>
+    </string-array>
+    <string name="pref_rec_gyro_log">자이로 로그 (.gcsv)</string>
+    <string name="pref_rec_gyro_log_sum">녹화마다 안경 자이로를 옆에 저장합니다 (갤러리 저장이면 Documents/XrealEye, 아니면 앱 폴더, 시간당 약 110 MB). Gyroflow에서 읽을 수 있고, 녹화 보정이 흔들림 보정과 머리 움직임 보정값 계산에 씁니다.</string>
+    <string name="pref_enhance_delete_original">보정 후 원본 삭제</string>
+    <string name="pref_enhance_delete_original_sum">보정한 MP4를 다 쓰고 다시 읽어 확인한 뒤 MKV와 자이로 로그를 지웁니다. 끄면 둘 다 남깁니다.</string>
+    <string name="btn_enhance">녹화 보정</string>
+    <string name="btn_enhance_running">보정 중 %1$d/%2$d · %3$d%%</string>
+    <string name="enhance_dialog_title">보정할 녹화</string>
+    <string name="enhance_item_gyro">자이로 로그</string>
+    <string name="enhance_start_delete">보정 후 원본 삭제</string>
+    <string name="enhance_start_keep">보정 (원본 유지)</string>
+    <string name="enhance_none">보정할 녹화가 없습니다.</string>
+    <string name="enhance_busy_recording">먼저 녹화를 멈추세요. 보정은 녹화와 인코더를 함께 씁니다.</string>
+    <string name="enhance_cancel_title">보정을 중지할까요?</string>
+    <string name="enhance_cancel_msg">처리 중이던 파일은 그대로 남습니다.</string>
+    <string name="enhance_cancel">중지</string>
+    <string name="enhance_keep_going">계속</string>
+    <string name="notif_channel_enhance">녹화 보정</string>
+    <string name="enhance_notif_title">녹화 보정 %1$d/%2$d</string>
+    <string name="enhance_notif_analyzing">%1$s · 분석 %2$d%%</string>
+    <string name="enhance_notif_encoding">%1$s · 인코딩 %2$d%%</string>
+    <string name="enhance_done_title">녹화 보정 완료</string>
+    <string name="enhance_summary">보정 %1$d, 건너뜀 %2$d, 실패 %3$d</string>
+    <string name="enhance_summary_saved">%1$s 확보</string>
+    <string name="enhance_stop_cancelled">중지됨</string>
+    <string name="enhance_stop_timeout">Android 백그라운드 시간 제한으로 중지됨</string>
+    <string name="enhance_stop_recording">녹화가 시작되어 중지됨</string>
 </resources>
