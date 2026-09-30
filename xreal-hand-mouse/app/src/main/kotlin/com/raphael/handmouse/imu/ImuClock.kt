@@ -21,15 +21,26 @@ class ImuClock {
     private var offsetNs: Long? = null
 
     /** Feeds one sample's timestamps and returns its time on the local clock. */
-    fun toLocal(deviceTimeNs: Long, receivedLocalNs: Long): Long {
-        val delta = receivedLocalNs - deviceTimeNs
+    fun toLocal(deviceTimeNs: Long, receivedLocalNs: Long): Long =
+        toLocal(longArrayOf(deviceTimeNs), receivedLocalNs)[0]
+
+    /**
+     * Feeds the samples of one socket read (oldest first, all received at [receivedLocalNs]) and
+     * returns each one's time on the local clock. Only the newest sample, which has waited the
+     * least, updates the estimate; the others sit before it at their device spacing. Fed one by
+     * one, a read that starts or restarts the estimate gave every sample the arrival time.
+     */
+    fun toLocal(deviceTimesNs: LongArray, receivedLocalNs: Long): LongArray {
+        if (deviceTimesNs.isEmpty()) return deviceTimesNs
+        val newest = deviceTimesNs.last()
+        val delta = receivedLocalNs - newest
         val cur = offsetNs
         val next = when {
             cur == null || delta < cur || delta - cur > RESET_JUMP_NS -> delta
-            else -> cur + CREEP_NS_PER_SAMPLE
+            else -> cur + CREEP_NS_PER_SAMPLE * deviceTimesNs.size
         }
         offsetNs = next
-        return deviceTimeNs + next
+        return LongArray(deviceTimesNs.size) { deviceTimesNs[it] + next }
     }
 
     fun reset() {

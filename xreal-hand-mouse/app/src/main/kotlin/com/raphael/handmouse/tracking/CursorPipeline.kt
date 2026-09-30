@@ -233,7 +233,7 @@ class CursorPipeline(
     // is shown as a preview and used as-is on confirm — what the user sees is where it lands.
     private class FistPlan(val target: CursorPoint?, val dropped: Boolean)
     private var fistPlan: FistPlan? = null
-    private var fistWasPending = false
+    private val fistAttempt = FistAttempt()
     private var pinchDownAtMs = 0L
 
     // Fist touch-down mode (setting, 2026-09-29): a confirmed fist presses at the planned point
@@ -243,6 +243,7 @@ class CursorPipeline(
         var dragging = false
         var x = anchorX
         var y = anchorY
+        val opening = FistOpening()
     }
     private var fistTouch: FistTouch? = null
 
@@ -389,9 +390,9 @@ class CursorPipeline(
         // Punho fechado: suprime o pinch (num punho o polegar encosta no indicador e o
         // PinchDetector confundiria com clique), clica e, segurado FIST_RECENTER_HOLD_MS, recentraliza.
         val fistSuppressesPinch = updateFistState(isFist, t, currentBounds)
-        val fistPending = !isFist && fistDetector.enterProgress > 0f
-        val fistAbandoned = fistWasPending && !fistPending && !isFist
-        fistWasPending = fistPending
+        fistAttempt.update(isFist, fistDetector.enterProgress)
+        val fistPending = fistAttempt.pending
+        val fistAbandoned = fistAttempt.abandoned
         val fistRingShown = updateFistPlan(fistPending, fistAbandoned, t, currentBounds)
         overlay.setFistProgress(if (fistRingShown) fistDetector.enterProgress else 0f)
         if (!fistSuppressesPinch && fistReleasePending) {
@@ -422,7 +423,9 @@ class CursorPipeline(
                 pinchDetector.reset()
                 null
             }
-            pressed && (fistAbandoned || (fistPending && rawPinchEvent == PinchEvent.UP)) -> {
+            // Only a ring that grew ([FistAttempt.REAL_PROGRESS]) counts: one frame of curl
+            // noise must not throw away a held pinch or the click of a released one.
+            pressed && (fistAttempt.abandonedReal || (fistAttempt.pendingReal && rawPinchEvent == PinchEvent.UP)) -> {
                 Log.d(TAG, "Pinch press dropped together with the abandoned fist")
                 clickDragStateMachine.reset()
                 pinchDetector.reset()
@@ -664,13 +667,15 @@ class CursorPipeline(
 
     /** Held fist touch: pinned at the press point until the cursor has moved
      * [FIST_TOUCH_SLOP_PX], then follows the hand from there. Frames where the fingers are
-     * already opening (curl above the fist entry threshold, before the exit confirms) hold the
-     * position, so opening the hand does not shift the release point. The injector gets a
-     * segment every frame either way — a still touch needs them too (see [GestureInjector]). */
+     * opening ([FistOpening]: the curl rose fast and has not come back under the fist entry
+     * threshold, before the exit confirms) hold the position, so opening the hand does not shift
+     * the release point; a loose fist, curl between entry and exit, keeps following. The
+     * injector gets a segment every frame either way — a still touch needs them too (see
+     * [GestureInjector]). */
     private fun updateFistTouch(timestampMs: Long, display: DisplayBounds) {
         val touch = fistTouch ?: return
         val (hx, hy) = lastLivePosition
-        if (fistDetector.curl < FistDetector.ENTER_THRESHOLD) {
+        if (!touch.opening.update(fistDetector.curl, timestampMs, FistDetector.ENTER_THRESHOLD)) {
             if (!touch.dragging && kotlin.math.hypot(hx - touch.handX, hy - touch.handY) > FIST_TOUCH_SLOP_PX) {
                 touch.dragging = true
                 touch.handX = hx
@@ -792,7 +797,7 @@ class CursorPipeline(
         overlay.hidePalmMenu()
         overlay.setFistProgress(0f)
         clearFistPlan()
-        fistWasPending = false
+        fistAttempt.reset()
         overlay.setHint(null)
         // Achado I3b — ver "Drag órfão ao perder a mão" no Javadoc da classe: encerra um drag em
         // andamento ANTES de resetar clickDragStateMachine (reset() apaga phase, precisamos ler

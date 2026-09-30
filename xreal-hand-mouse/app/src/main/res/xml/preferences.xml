@@ -211,6 +211,13 @@
             android:defaultValue="true"
             android:title="@string/pref_rec_gyro_log"
             android:summary="@string/pref_rec_gyro_log_sum" />
+        <ListPreference
+            android:key="rec_enhance_height"
+            android:defaultValue="720"
+            android:entries="@array/rec_enhance_height_entries"
+            android:entryValues="@array/rec_enhance_height_values"
+            android:title="@string/pref_enhance_height"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             android:key="rec_enhance_delete_original"
             android:defaultValue="true"

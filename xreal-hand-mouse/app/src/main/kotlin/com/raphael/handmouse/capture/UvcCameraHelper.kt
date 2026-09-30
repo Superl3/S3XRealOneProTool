@@ -710,10 +710,25 @@ class UvcCameraHelper(private val context: Context) {
             return if (r == size) data else null
         }
 
-        // Anti-flicker: only touched once the user picked a value (the camera default is kept otherwise).
-        if (want.powerLineFrequency >= 0 && want.powerLineFrequency != had?.powerLineFrequency) {
-            if (supports(pu, 10)) set(pu!!, 0x05, byteArrayOf(want.powerLineFrequency.toByte()), "PowerLineFrequency=${want.powerLineFrequency}")
-            else listener?.onLog("Camera control PowerLineFrequency not supported")
+        // Anti-flicker: untouched until the user picks a value. Picking "camera default" (-1)
+        // afterwards sends the camera's own default back, as the exposure below does; like
+        // exposure, the value outlives the stream, so a new stream compares with the default first.
+        if (want.powerLineFrequency >= 0) {
+            if (want.powerLineFrequency != had?.powerLineFrequency) {
+                if (supports(pu, 10)) set(pu!!, 0x05, byteArrayOf(want.powerLineFrequency.toByte()), "PowerLineFrequency=${want.powerLineFrequency}")
+                else listener?.onLog("Camera control PowerLineFrequency not supported")
+            }
+        } else if (supports(pu, 10)) {
+            val stale = if (had == null) {
+                get(pu!!, 0x81, 0x05, 1)?.let { cur -> get(pu, 0x87, 0x05, 1)?.let { def -> cur[0] != def[0] } } == true
+            } else {
+                had.powerLineFrequency >= 0
+            }
+            if (stale) {
+                val def = get(pu!!, 0x87, 0x05, 1)
+                if (def != null) set(pu, 0x05, def, "PowerLineFrequency=default(${def[0].toInt() and 0xFF})")
+                else listener?.onLog("Camera control PowerLineFrequency default unreadable")
+            }
         }
         // Exposure: manual time, or back to the camera's default AE mode when switched to auto.
         // On a new stream with "auto", the camera may still hold a manual mode set earlier (UVC

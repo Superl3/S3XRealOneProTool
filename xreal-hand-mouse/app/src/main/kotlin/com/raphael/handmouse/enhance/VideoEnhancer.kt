@@ -53,6 +53,7 @@ class VideoEnhancer(private val context: Context) {
 
     companion object {
         private const val TAG = "VideoEnhancer"
+        /** At the recording's own size; [bitrateFor] halves them for a downscaled output. */
         const val HEVC_BITRATE = 5_000_000
         const val AVC_BITRATE = 8_000_000
         private const val ANALYSIS_SAMPLE = 4
@@ -77,6 +78,34 @@ class VideoEnhancer(private val context: Context) {
             val median = d[d.size / 2]
             return d.filter { it <= 2 * median }.average().coerceIn(1e6 / 120, 1e6)
         }
+
+        /**
+         * Output size for [targetHeight] (the setting): the source's own size when it is not taller
+         * than the target (never upscaled), else [targetHeight] rows and the width that keeps the
+         * aspect. Both even, as the encoders need.
+         */
+        internal fun outputSize(srcW: Int, srcH: Int, targetHeight: Int): Pair<Int, Int> {
+            if (targetHeight >= srcH) return (srcW and 1.inv()) to (srcH and 1.inv())
+            val h = targetHeight and 1.inv()
+            val w = (srcW.toLong() * h / srcH).toInt() and 1.inv()
+            return w to h
+        }
+
+        /**
+         * Encoder bitrate: [base] at the recording's own size, half of it when the output is
+         * downscaled. 720p from 1080p has 44 % of the pixels; half keeps the bits per pixel at the
+         * 1080p level (0.090 vs 0.080 for HEVC at 30 fps) — cutting the bitrate alone would not.
+         */
+        internal fun bitrateFor(base: Int, outHeight: Int, srcHeight: Int): Int =
+            if (outHeight < (srcHeight and 1.inv())) base / 2 else base
+
+        /**
+         * The original may go only when nothing was lost on the way: every frame decoded and
+         * rendered, and every written sample read back. [verify] tolerates 1 % missing samples
+         * (the output still plays); an unrecoverable original is not worth that slack.
+         */
+        internal fun mayDeleteOriginal(frames: Int, rendered: Int, samplesWritten: Int, samplesRead: Int): Boolean =
+            rendered == frames && samplesRead == samplesWritten
 
         /** [timesUs] moved onto the [stepUs] grid, strictly increasing (one frame per slot). */
         internal fun snapTimes(timesUs: LongArray, stepUs: Double): LongArray {
@@ -123,6 +152,7 @@ class VideoEnhancer(private val context: Context) {
     fun enhance(
         recording: RecordingOutput.Recording,
         deleteOriginal: Boolean,
+        outputHeight: Int,
         isCancelled: () -> Boolean,
         progress: Progress,
     ): Outcome {
@@ -152,7 +182,7 @@ class VideoEnhancer(private val context: Context) {
             if (output.freeBytes(recording.storage) < needBytes) return Outcome.Failed("not enough free space")
 
             return try {
-                run(recording, reader, video, frames, audio, audioBlocks, name, deleteOriginal, isCancelled, progress, started)
+                run(recording, reader, video, frames, audio, audioBlocks, name, deleteOriginal, outputHeight, isCancelled, progress, started)
             } catch (_: CancelledException) {
                 Outcome.Cancelled
             }
@@ -168,6 +198,7 @@ class VideoEnhancer(private val context: Context) {
         audioBlocks: List<MkvReader.Block>,
         name: String,
         deleteOriginal: Boolean,
+        outputHeight: Int,
         isCancelled: () -> Boolean,
         progress: Progress,
         started: Long,
@@ -176,8 +207,11 @@ class VideoEnhancer(private val context: Context) {
         val srcW = video.width
         val srcH = video.height
         val usableH = (srcH - video.pixelCropBottom).coerceIn(2, srcH)
-        val outW = srcW and 1.inv()
-        val outH = srcH and 1.inv()
+        val (outW, outH) = outputSize(srcW, srcH, outputHeight)
+        // the stabilization plan and the shader work in source pixels: the plan sees the output
+        // at source size, and the shader is told the resampling factor through the zoom
+        val planH = srcH and 1.inv()
+        val scale = outH.toFloat() / planH
         val timesUs = LongArray(n) { frames[it].timeUs - frames[0].timeUs }
 
         // ---- 1. analysis ----
@@ -222,7 +256,7 @@ class VideoEnhancer(private val context: Context) {
             }
         }
         val pathMotion = if (gyroMotion != null) Array(n) { gyroMotion[it] ?: motion[it] } else motion
-        val path = StabilizationPath.plan(pathMotion, srcW, usableH, outH)
+        val path = StabilizationPath.plan(pathMotion, srcW, usableH, planH)
         val stabilization = when {
             !path.active -> "off"
             gyroMotion != null -> "gyro"
@@ -234,7 +268,7 @@ class VideoEnhancer(private val context: Context) {
         val ptsUs = snapTimes(timesUs, stepUs)
 
         // ---- 3. render ----
-        val encoder = createEncoder(outW, outH, fps)
+        val encoder = createEncoder(outW, outH, fps, planH)
         val out = output.create(
             recording.storage,
             if (recording.storage == RecordingOutput.Storage.APP) name + RecordingOutput.PART_EXT else name,
@@ -285,7 +319,7 @@ class VideoEnhancer(private val context: Context) {
                     bmp,
                     m?.let { floatArrayOf(it[0] * srcW, it[1] * srcW, it[2]) },
                     floatArrayOf(path.ux[i], path.uy[i], path.phi[i]),
-                    path.zoom,
+                    path.zoom * scale,
                     floatArrayOf(tone.black[i], tone.white[i], tone.gamma[i]),
                     ptsUs[i] * 1000,
                 )
@@ -307,10 +341,14 @@ class VideoEnhancer(private val context: Context) {
             // against the recording's own span, not the snapped times: a grid slower than the
             // frames stretches the output and would pass a check against itself
             val expectedUs = timesUs.last() - timesUs.first()
-            val problem = verify(out.fileDescriptor, outW, outH, expectedUs, sink.videoSamples)
-            if (problem != null) return Outcome.Failed("output check failed: $problem")
+            val check = verify(out.fileDescriptor, outW, outH, expectedUs, sink.videoSamples)
+            if (check.problem != null) return Outcome.Failed("output check failed: ${check.problem}")
             ok = true
-            out.finish()
+            val published = out.finish()
+            if (!published) {
+                ok = false
+                return Outcome.Failed("could not publish ${out.displayName}")
+            }
             var location = out.location
             var size = sink.bytes
             if (recording.storage == RecordingOutput.Storage.APP) {
@@ -320,7 +358,7 @@ class VideoEnhancer(private val context: Context) {
                 location = final.absolutePath
                 size = final.length()
             }
-            val deleted = deleteOriginal && output.delete(recording)
+            val deleted = deleteOriginal && mayDeleteOriginal(n, rendered, sink.videoSamples, check.samples) && output.delete(recording)
             val seconds = (SystemClock.elapsedRealtime() - started) / 1000f
             Log.i(TAG, "$name: $rendered/$n frames, ${encoder.label}, stabilization $stabilization, ${seconds}s" +
                 (if (deleted) ", original deleted" else ""))
@@ -433,9 +471,13 @@ class VideoEnhancer(private val context: Context) {
 
     private class Encoder(val codec: MediaCodec, val label: String)
 
-    private fun createEncoder(width: Int, height: Int, fps: Int): Encoder {
+    private fun createEncoder(width: Int, height: Int, fps: Int, sourceHeight: Int): Encoder {
         val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-        for ((mime, bitrate) in listOf(MediaFormat.MIMETYPE_VIDEO_HEVC to HEVC_BITRATE, MediaFormat.MIMETYPE_VIDEO_AVC to AVC_BITRATE)) {
+        val candidates = listOf(
+            MediaFormat.MIMETYPE_VIDEO_HEVC to bitrateFor(HEVC_BITRATE, height, sourceHeight),
+            MediaFormat.MIMETYPE_VIDEO_AVC to bitrateFor(AVC_BITRATE, height, sourceHeight),
+        )
+        for ((mime, bitrate) in candidates) {
             val format = MediaFormat.createVideoFormat(mime, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
@@ -458,7 +500,9 @@ class VideoEnhancer(private val context: Context) {
                 codec.release()
                 continue
             }
-            val label = "${if (mime == MediaFormat.MIMETYPE_VIDEO_HEVC) "HEVC" else "AVC"} ${bitrate / 1_000_000} Mbit/s ($codecName)"
+            val mbit = bitrate / 1_000_000.0
+            val rate = if (mbit == mbit.toInt().toDouble()) "${mbit.toInt()}" else "%.1f".format(mbit)
+            val label = "${if (mime == MediaFormat.MIMETYPE_VIDEO_HEVC) "HEVC" else "AVC"} ${width}x$height $rate Mbit/s ($codecName)"
             return Encoder(codec, label)
         }
         throw IllegalStateException("no usable HEVC/AVC encoder for ${width}x$height")
@@ -537,21 +581,24 @@ class VideoEnhancer(private val context: Context) {
         }
     }
 
-    /** Null when the written MP4 reads back as expected, else what is wrong. */
-    private fun verify(fd: java.io.FileDescriptor, width: Int, height: Int, expectedUs: Long, samplesWritten: Int): String? {
+    /** [problem] is null when the written MP4 reads back as expected, else what is wrong;
+     * [samples] is how many video samples the extractor read (0 when it never got that far). */
+    private class Check(val problem: String?, val samples: Int = 0)
+
+    private fun verify(fd: java.io.FileDescriptor, width: Int, height: Int, expectedUs: Long, samplesWritten: Int): Check {
         val ex = MediaExtractor()
         try {
             ex.setDataSource(fd)
             val track = (0 until ex.trackCount).firstOrNull {
                 ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-            } ?: return "no video track"
+            } ?: return Check("no video track")
             val f = ex.getTrackFormat(track)
             if (f.getInteger(MediaFormat.KEY_WIDTH) != width || f.getInteger(MediaFormat.KEY_HEIGHT) != height) {
-                return "size ${f.getInteger(MediaFormat.KEY_WIDTH)}x${f.getInteger(MediaFormat.KEY_HEIGHT)}"
+                return Check("size ${f.getInteger(MediaFormat.KEY_WIDTH)}x${f.getInteger(MediaFormat.KEY_HEIGHT)}")
             }
             if (f.containsKey(MediaFormat.KEY_DURATION)) {
                 val d = f.getLong(MediaFormat.KEY_DURATION)
-                if (abs(d - expectedUs) > 1_000_000) return "duration ${d / 1000} ms, expected ${expectedUs / 1000} ms"
+                if (abs(d - expectedUs) > 1_000_000) return Check("duration ${d / 1000} ms, expected ${expectedUs / 1000} ms")
             }
             ex.selectTrack(track)
             var samples = 0
@@ -559,10 +606,10 @@ class VideoEnhancer(private val context: Context) {
                 samples++
                 ex.advance()
             }
-            if (samples < samplesWritten * 0.99) return "$samples of $samplesWritten frames readable"
-            return null
+            if (samples < samplesWritten * 0.99) return Check("$samples of $samplesWritten frames readable", samples)
+            return Check(null, samples)
         } catch (e: Exception) {
-            return "unreadable: ${e.message}"
+            return Check("unreadable: ${e.message}")
         } finally {
             ex.release()
         }

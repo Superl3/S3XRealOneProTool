@@ -65,6 +65,31 @@ class XrealImuTest {
         assertEquals(50_000_000_000L, after)
     }
 
+    /** [n] samples 1 ms apart, the newest one [delayNs] late on arrival, offset 1 ms. */
+    private fun read(firstDeviceNs: Long, n: Int, delayNs: Long): Pair<LongArray, Long> {
+        val device = LongArray(n) { firstDeviceNs + it * 1_000_000L }
+        return device to device.last() + 1_000_000L + delayNs
+    }
+
+    @Test
+    fun aReadsSamplesKeepTheirSpacingWhenTheClockIsNew() {
+        val (device, received) = read(10_000_000L, 30, delayNs = 2_000_000L)
+        val local = ImuClock().toLocal(device, received)
+        assertEquals(received, local.last())
+        for (i in 1 until local.size) assertEquals("sample $i", 1_000_000L, local[i] - local[i - 1])
+    }
+
+    @Test
+    fun aReadAfterAStallKeepsItsSpacing() {
+        val c = ImuClock()
+        val (d1, r1) = read(10_000_000L, 30, delayNs = 2_000_000L)
+        c.toLocal(d1, r1)
+        // 3 s of nothing, then the backlog: far above the estimate, the clock starts over
+        val (d2, r2) = read(3_040_000_000L, 30, delayNs = 3_000_000_000L)
+        val local = c.toLocal(d2, r2)
+        for (i in 1 until local.size) assertEquals("sample $i", 1_000_000L, local[i] - local[i - 1])
+    }
+
     @Test
     fun aVpnRefusalSaysToExcludeTheApp() {
         // the S25 Edge's message under AdGuard, 2026-09-29

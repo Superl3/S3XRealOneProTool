@@ -146,8 +146,11 @@ class EnhanceService : Service() {
         return START_NOT_STICKY
     }
 
-    /** Android 15+: the daily foreground-service budget ran out. */
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    /** Android 15+: the foreground-service budget ran out. Android 14 calls only the
+     * one-argument form; without it the system stops the service without a word. */
+    override fun onTimeout(startId: Int, fgsType: Int) = onTimeout(startId)
+
+    override fun onTimeout(startId: Int) {
         requestStop(getString(R.string.enhance_stop_timeout))
         // the worker stops within a frame and then stops the service; the system allows a few seconds
         if (worker == null) stopSelf() else main.postDelayed({ if (worker != null) stopSelf() }, 3000)
@@ -169,6 +172,7 @@ class EnhanceService : Service() {
         val queue = wanted.mapNotNull { (storage, name) -> all.firstOrNull { it.storage.name == storage && it.displayName == name } }
         val enhancer = VideoEnhancer(this)
         val deleteOriginal = Prefs(this).enhanceDeleteOriginal
+        val outputHeight = Prefs(this).enhanceOutputHeight
         var done = 0
         var skipped = 0
         var failed = 0
@@ -189,7 +193,7 @@ class EnhanceService : Service() {
                 continue
             }
             val outcome = try {
-                enhancer.enhance(rec, deleteOriginal, isCancelled) { fraction, analyzing ->
+                enhancer.enhance(rec, deleteOriginal, outputHeight, isCancelled) { fraction, analyzing ->
                     publish(Status(true, i + 1, queue.size, rec.displayName, fraction, analyzing))
                 }
             } catch (e: Throwable) {

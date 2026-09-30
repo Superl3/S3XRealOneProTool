@@ -39,6 +39,7 @@ class XrealImuClient(
         private const val READ_TIMEOUT_MS = 700
         private const val RETRY_MS = 3000L
         private const val STATS_INTERVAL_NS = 10_000_000_000L
+        private const val NO_NETWORK = "no 169.254.x network (the glasses' USB network is not up)"
 
         /**
          * The app-log line for a connection failure. EPERM is a VPN that owns the app's traffic
@@ -79,16 +80,23 @@ class XrealImuClient(
     private fun run() {
         val me = Thread.currentThread()
         var lastFailure: String? = null
+        var noNetwork = 0
         while (thread === me) {
             val network = findGlassesNetwork()
             if (network == null) {
-                if (lastFailure != "no network") Log.d(TAG, "No 169.254.x network (glasses USB network) yet")
-                lastFailure = "no network"
+                // the network can come up a moment after the glasses are plugged in: report the second miss
+                if (++noNetwork >= 2 && lastFailure != NO_NETWORK) {
+                    Log.w(TAG, "No 169.254.x network (glasses USB network)")
+                    onFailure(NO_NETWORK)
+                    lastFailure = NO_NETWORK
+                }
             } else {
+                noNetwork = 0
                 try {
                     stream(network, me)
                     lastFailure = null
                 } catch (e: Exception) {
+                    if (thread !== me) break // stop() closed the socket under the read: not a failure
                     val msg = e.message ?: e.javaClass.simpleName
                     if (msg != lastFailure) {
                         Log.w(TAG, "IMU connection: $msg")
@@ -132,8 +140,10 @@ class XrealImuClient(
             }
             if (n < 0) throw java.io.EOFException("IMU stream closed by the glasses")
             val now = System.nanoTime()
-            for (sample in parser.feed(buf, n)) {
-                val local = clock.toLocal(sample.deviceTimeNs, now)
+            val fresh = parser.feed(buf, n)
+            val locals = clock.toLocal(LongArray(fresh.size) { fresh[it].deviceTimeNs }, now)
+            for ((k, sample) in fresh.withIndex()) {
+                val local = locals[k]
                 if (first) {
                     first = false
                     Log.i(TAG, "First IMU report: gyro (%.4f, %.4f, %.4f) accel (%.3f, %.3f, %.3f) %.1f °C".format(

@@ -181,6 +181,8 @@ class Prefs(context: Context) {
     val recordGyroLog: Boolean get() = prefs.getBoolean(KEY_REC_GYRO_LOG, true)
     /** The enhancer deletes the MKV (and its `.gcsv`) once the MP4 checked out (on by default). */
     val enhanceDeleteOriginal: Boolean get() = prefs.getBoolean(KEY_ENHANCE_DELETE_ORIGINAL, true)
+    /** Height of the enhanced MP4, px: 720 (default) or 1080 (the recording's own size). */
+    val enhanceOutputHeight: Int get() = (prefs.getString(KEY_ENHANCE_HEIGHT, "720") ?: "720").toIntOrNull() ?: 720
 
     // ---- Display ----
     val dimAuto: Boolean get() = prefs.getBoolean(KEY_DIM_AUTO, true)
@@ -221,6 +223,7 @@ const val KEY_DATASET_LABEL = "hm_dataset_label"
 const val DATASET_OFF = "off"
 const val KEY_REC_GYRO_LOG = "rec_gyro_log"
 const val KEY_ENHANCE_DELETE_ORIGINAL = "rec_enhance_delete_original"
+const val KEY_ENHANCE_HEIGHT = "rec_enhance_height"
 const val KEY_THUMBS_UP_MUTE = "hm_thumbs_up_mute"
 const val KEY_V_SIGN_VOICE = "hm_v_sign_voice"
 const val KEY_IGNORE_BOTTOM = "hm_ignore_bottom"

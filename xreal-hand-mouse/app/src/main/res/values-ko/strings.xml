@@ -253,6 +253,11 @@
     </string-array>
     <string name="pref_rec_gyro_log">자이로 로그 (.gcsv)</string>
     <string name="pref_rec_gyro_log_sum">녹화마다 안경 자이로를 옆에 저장합니다 (갤러리 저장이면 Documents/XrealEye, 아니면 앱 폴더, 시간당 약 110 MB). Gyroflow에서 읽을 수 있고, 녹화 보정이 흔들림 보정과 머리 움직임 보정값 계산에 씁니다.</string>
+    <string name="pref_enhance_height">보정 영상 크기</string>
+    <string-array name="rec_enhance_height_entries">
+        <item>720p, HEVC 2.5Mbit/s — 시간당 약 1.1GB (권장)</item>
+        <item>1080p, HEVC 5Mbit/s — 시간당 약 2.3GB</item>
+    </string-array>
     <string name="pref_enhance_delete_original">보정 후 원본 삭제</string>
     <string name="pref_enhance_delete_original_sum">보정한 MP4를 다 쓰고 다시 읽어 확인한 뒤 MKV와 자이로 로그를 지웁니다. 끄면 둘 다 남깁니다.</string>
     <string name="btn_enhance">녹화 보정</string>

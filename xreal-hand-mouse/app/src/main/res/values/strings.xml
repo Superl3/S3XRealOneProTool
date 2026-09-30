@@ -308,6 +308,15 @@
     </string-array>
     <string name="pref_rec_gyro_log">Gyro log (.gcsv)</string>
     <string name="pref_rec_gyro_log_sum">Saves the glasses\' gyro next to each recording (Documents/XrealEye with gallery storage, the app folder otherwise; about 110 MB per hour). Gyroflow reads it; the enhancer uses it to stabilize and to calibrate the head-motion compensation.</string>
+    <string name="pref_enhance_height">Enhanced video size</string>
+    <string-array name="rec_enhance_height_entries">
+        <item>720p, HEVC 2.5 Mbit/s — about 1.1 GB per hour (recommended)</item>
+        <item>1080p, HEVC 5 Mbit/s — about 2.3 GB per hour</item>
+    </string-array>
+    <string-array name="rec_enhance_height_values" translatable="false">
+        <item>720</item>
+        <item>1080</item>
+    </string-array>
     <string name="pref_enhance_delete_original">Delete originals after enhancing</string>
     <string name="pref_enhance_delete_original_sum">Once the enhanced MP4 is written and reads back correctly, the MKV and its gyro log are deleted. Off: both are kept.</string>
     <string name="btn_enhance">Enhance recordings</string>

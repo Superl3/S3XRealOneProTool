@@ -77,16 +77,17 @@ class RecordingOutput(private val context: Context) {
         /** Human-readable location for the UI. */
         val location: String get() = file?.absolutePath ?: "$relativeDir/$displayName"
 
-        /** Closes and publishes the file. */
-        fun finish() {
+        /** Closes and publishes the file. False when a gallery file could not be published
+         * (it stays pending; [recoverPending] may delete it). */
+        fun finish(): Boolean {
             closeQuietly()
-            if (uri != null) {
-                val cv = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-                try {
-                    context.contentResolver.update(uri, cv, null, null)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not publish $uri: ${e.message}")
-                }
+            if (uri == null) return true
+            val cv = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            return try {
+                context.contentResolver.update(uri, cv, null, null) > 0
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not publish $uri: ${e.message}")
+                false
             }
         }
 
@@ -368,6 +369,46 @@ class RecordingOutput(private val context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "recoverPending failed: ${e.message}")
         }
+        recoverPendingSidecars()
         return recovered
+    }
+
+    /** A `.gcsv` left pending by a crash is published, or deleted when empty. Its rows up to the
+     * crash are good ([com.raphael.handmouse.enhance.GcsvReader] skips a torn row), and
+     * [openSidecar] and [deleteSidecar] do not see pending files: unrecovered, the recording
+     * enhances without its gyro and deleting it leaves the log behind. */
+    private fun recoverPendingSidecars() {
+        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val args = android.os.Bundle().apply {
+            putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_ONLY)
+            putString(
+                android.content.ContentResolver.QUERY_ARG_SQL_SELECTION,
+                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
+            )
+            putStringArray(
+                android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                arrayOf("$SIDECAR_DIR%", "%$SIDECAR_EXT"),
+            )
+        }
+        try {
+            context.contentResolver.query(
+                collection,
+                arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE),
+                args,
+                null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val uri = android.content.ContentUris.withAppendedId(collection, c.getLong(0))
+                    if (c.getLong(1) <= 0L) {
+                        context.contentResolver.delete(uri, null, null)
+                    } else {
+                        val cv = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                        context.contentResolver.update(uri, cv, null, null)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "recoverPendingSidecars failed: ${e.message}")
+        }
     }
 }
