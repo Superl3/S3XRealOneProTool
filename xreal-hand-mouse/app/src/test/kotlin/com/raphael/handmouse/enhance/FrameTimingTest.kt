@@ -64,6 +64,57 @@ class FrameTimingTest {
         assertEquals(listOf(0L, 33_333L, 66_667L, 100_000L, 133_333L, 166_667L), pts.toList())
     }
 
+    /** 41 min like the Eye's: the rate wanders by ±1.7 % over 5 min blocks, ±2 ms jitter, a 2.2 s stall every 5 min. */
+    private fun wandering(blockMeansMs: DoubleArray = doubleArrayOf(34.6, 33.4), minutes: Int = 41, seed: Long = 7): LongArray {
+        val rnd = Random(seed)
+        val out = ArrayList<Long>()
+        var t = 0.0
+        var nextStallMs = 300_000.0
+        out += 0L
+        while (t < minutes * 60_000.0) {
+            val block = ((t / 300_000.0).toInt()) % blockMeansMs.size
+            t += blockMeansMs[block] + rnd.nextInt(5) - 2
+            if (t >= nextStallMs) { t += 2_200.0; nextStallMs += 300_000.0 }
+            out += t.roundToLong() * 1000
+        }
+        return out.toLongArray()
+    }
+
+    @Test
+    fun aDriftingRateStretchesAnUnlimitedGridPastTheCheck() {
+        // the failure of 2026-09-30: [VideoEnhancer.verify] allows 1 s and the grid gave 2.5 s on a 41 min file
+        val t = wandering()
+        val step = VideoEnhancer.frameIntervalUs(t)
+        val pts = VideoEnhancer.snapTimes(t, step)
+        val stretch = (pts.last() - pts.first()) - (t.last() - t.first())
+        assertTrue("stretch $stretch µs", stretch > VideoEnhancer.DURATION_TOLERANCE_US)
+    }
+
+    @Test
+    fun aLimitedGridKeepsALongRecordingWithinTwoStepsAndTheCheck() {
+        for (seed in 1L..4L) {
+            for (means in listOf(doubleArrayOf(34.6, 33.4), doubleArrayOf(34.4, 33.6), doubleArrayOf(34.5, 33.5, 34.2, 33.8))) {
+                val t = wandering(means, seed = seed)
+                val step = VideoEnhancer.frameIntervalUs(t)
+                val maxLag = (2 * step).toLong()
+                val pts = VideoEnhancer.snapTimes(t, step, maxLag)
+                assertEquals(t.size, pts.size)
+                for (i in 1 until pts.size) assertTrue("frame $i not increasing", pts[i] > pts[i - 1])
+                for (i in t.indices) assertTrue("frame $i is ${pts[i] - t[i]} µs late", pts[i] - t[i] <= maxLag + step / 2)
+                val stretch = abs((pts.last() - pts.first()) - (t.last() - t.first()))
+                assertTrue("stretch $stretch µs (seed $seed)", stretch < maxLag + step)
+            }
+        }
+    }
+
+    @Test
+    fun aLimitedGridStillSpreadsABurstAtLeastHalfAStepApart() {
+        val t = LongArray(40) { 1_000_000L + it * 1_000L } + LongArray(40) { 2_000_000L + it * 34_000L }
+        val step = 34_000.0
+        val pts = VideoEnhancer.snapTimes(t, step, (2 * step).toLong())
+        for (i in 1 until pts.size) assertTrue("frame $i gap ${pts[i] - pts[i - 1]} µs", pts[i] - pts[i - 1] >= step / 2 - 1)
+    }
+
     @Test
     fun tooFewFramesFallBackTo30Fps() {
         assertEquals(1e6 / 30, VideoEnhancer.frameIntervalUs(longArrayOf()), 1e-6)

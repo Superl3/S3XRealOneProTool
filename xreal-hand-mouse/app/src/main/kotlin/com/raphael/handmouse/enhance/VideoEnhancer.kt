@@ -107,17 +107,37 @@ class VideoEnhancer(private val context: Context) {
         internal fun mayDeleteOriginal(frames: Int, rendered: Int, samplesWritten: Int, samplesRead: Int): Boolean =
             rendered == frames && samplesRead == samplesWritten
 
-        /** [timesUs] moved onto the [stepUs] grid, strictly increasing (one frame per slot). */
-        internal fun snapTimes(timesUs: LongArray, stepUs: Double): LongArray {
+        /**
+         * [timesUs] moved onto the [stepUs] grid, strictly increasing (one frame per slot).
+         *
+         * [maxLagUs]: how far behind its own time a frame may be pushed. Without a limit, frames that
+         * come faster than the grid keep pushing each other back and the lag never returns while the
+         * rate stays up: on the 41 min recording of 2026-09-30 (71,777 frames, rate drifting by ~1 %
+         * over minutes) the output ended 2.5 s long and [verify] failed it after the whole render.
+         * Past the limit a frame follows its own time instead, at least half a step after the previous.
+         */
+        internal fun snapTimes(timesUs: LongArray, stepUs: Double, maxLagUs: Long = Long.MAX_VALUE): LongArray {
             val out = LongArray(timesUs.size)
             var lastSlot = -1L
             for (i in timesUs.indices) {
-                val slot = maxOf((timesUs[i] / stepUs).roundToLong(), lastSlot + 1)
-                out[i] = (slot * stepUs).roundToLong()
+                var slot = maxOf((timesUs[i] / stepUs).roundToLong(), lastSlot + 1)
+                var t = (slot * stepUs).roundToLong()
+                if (i > 0 && t - timesUs[i] > maxLagUs) {
+                    t = maxOf(timesUs[i], out[i - 1] + (stepUs / 2).toLong())
+                    slot = (t / stepUs).toLong() // the slot t sits in; the next frame takes a later one
+                }
+                if (i > 0 && t <= out[i - 1]) t = out[i - 1] + 1
+                out[i] = t
                 lastSlot = slot
             }
             return out
         }
+
+        /** The grid may lag a frame's own time by this many steps (see [snapTimes]). */
+        private const val GRID_MAX_LAG_STEPS = 2
+
+        /** [verify]'s limit on the output's length against the recording's. */
+        internal const val DURATION_TOLERANCE_US = 1_000_000L
     }
 
     sealed class Outcome {
@@ -213,6 +233,13 @@ class VideoEnhancer(private val context: Context) {
         val planH = srcH and 1.inv()
         val scale = outH.toFloat() / planH
         val timesUs = LongArray(n) { frames[it].timeUs - frames[0].timeUs }
+        val stepUs = frameIntervalUs(timesUs)
+        val fps = (1e6 / stepUs).roundToInt().coerceIn(1, 120)
+        val ptsUs = snapTimes(timesUs, stepUs, (GRID_MAX_LAG_STEPS * stepUs).toLong())
+        // the limit [verify] applies to the finished file, checked now: a failure here costs seconds,
+        // after the render it cost the whole run
+        val stretchUs = (ptsUs.last() - ptsUs.first()) - (timesUs.last() - timesUs.first())
+        if (abs(stretchUs) > DURATION_TOLERANCE_US) return Outcome.Failed("time grid changes the length by ${stretchUs / 1000} ms")
 
         // ---- 1. analysis ----
         val stats = arrayOfNulls<FloatArray>(n)
@@ -263,9 +290,6 @@ class VideoEnhancer(private val context: Context) {
             else -> "image"
         }
         val tone = TonePlan.build(stats)
-        val stepUs = frameIntervalUs(timesUs)
-        val fps = (1e6 / stepUs).roundToInt().coerceIn(1, 120)
-        val ptsUs = snapTimes(timesUs, stepUs)
 
         // ---- 3. render ----
         val encoder = createEncoder(outW, outH, fps, planH)
@@ -598,7 +622,7 @@ class VideoEnhancer(private val context: Context) {
             }
             if (f.containsKey(MediaFormat.KEY_DURATION)) {
                 val d = f.getLong(MediaFormat.KEY_DURATION)
-                if (abs(d - expectedUs) > 1_000_000) return Check("duration ${d / 1000} ms, expected ${expectedUs / 1000} ms")
+                if (abs(d - expectedUs) > DURATION_TOLERANCE_US) return Check("duration ${d / 1000} ms, expected ${expectedUs / 1000} ms")
             }
             ex.selectTrack(track)
             var samples = 0
