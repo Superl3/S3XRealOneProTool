@@ -24,6 +24,13 @@ class HandSettingsTest {
     }
 
     @Test
+    fun edgeBlockIsOffByDefaultAndPassesThrough() {
+        assertEquals(false, ui().edgeBlock)
+        val on = HandSettings.fromUi(100, 50, 50, 15, 400, 3, true, fistRecenter = false, thumbsUpMute = true, vSignVoice = false, edgeBlock = true)
+        assertEquals(true, on.edgeBlock)
+    }
+
+    @Test
     fun rangesAreMonotonicAndClamped() {
         assertEquals(0.20f, ui(sens = 200).spanX, 1e-6f)  // 2x faster
         assertEquals(0.80f, ui(sens = 10).spanX, 1e-6f)   // clamped to 50%

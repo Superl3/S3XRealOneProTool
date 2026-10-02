@@ -16,11 +16,21 @@
 
     <!-- Eyebrow: label de seção pequeno, espaçado, secundário -->
     <style name="Hm.Eyebrow" parent="Widget.MaterialComponents.TextView">
-        <item name="android:textSize">11sp</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/hm_text_secondary</item>
-        <item name="android:letterSpacing">0.12</item>
+        <item name="android:letterSpacing">0.08</item>
         <item name="android:textStyle">bold</item>
         <item name="android:layout_marginBottom">10dp</item>
+    </style>
+
+    <!-- Botão de ícone 40dp (ex.: "info" ao lado do título de seção, engrenagem do cabeçalho); src/contentDescription vêm da view -->
+    <style name="Hm.IconButton" parent="Widget.AppCompat.ImageButton">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">@color/hm_text_secondary</item>
     </style>
 
     <!-- Botão primário (filled, colorPrimary) — sentence case, 52dp de altura, cantos 12dp -->

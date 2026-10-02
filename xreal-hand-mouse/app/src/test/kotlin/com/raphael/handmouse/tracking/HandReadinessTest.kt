@@ -29,6 +29,14 @@ class HandReadinessTest {
     }
 
     @Test
+    fun `the edge test can be switched off and the score test stays`() {
+        val wristBelow = hand().toMutableList().apply { this[0] = HandPoint(0.5f, 1.05f, 0f) }
+        assertNull(HandReadiness.notReadyReason(wristBelow, 0.95f, checkEdge = false))
+        assertEquals(HandReadiness.Reason.EDGE, HandReadiness.notReadyReason(wristBelow, 0.95f, checkEdge = true))
+        assertEquals(HandReadiness.Reason.LOW_SCORE, HandReadiness.notReadyReason(wristBelow, 0.55f, checkEdge = false))
+    }
+
+    @Test
     fun `a low handedness score is not ready`() {
         assertEquals(HandReadiness.Reason.LOW_SCORE, HandReadiness.notReadyReason(hand(), 0.55f))
         assertNull(HandReadiness.notReadyReason(hand(), 0.6f))

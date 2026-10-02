@@ -4,6 +4,7 @@
 <resources>
     <color name="hm_bg">#0B0E12</color>
     <color name="hm_surface">#151A21</color>
+    <color name="hm_surface_raised">#1F2733</color>
     <color name="hm_stroke">#262E39</color>
     <color name="hm_text_primary">#E8EDF3</color>
     <color name="hm_text_secondary">#8D98A8</color>

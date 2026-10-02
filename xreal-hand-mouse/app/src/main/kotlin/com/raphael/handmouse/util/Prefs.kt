@@ -26,8 +26,7 @@ class Prefs(context: Context) {
         private const val KEY_VOICE_LANGUAGE = "voice_language"
         private const val KEY_SETUP_COMPLETED = "setup_completed"
         private const val KEY_SETUP_SECTION_EXPANDED = "setup_section_expanded"
-        private const val KEY_GESTURES_VISIBLE = "gestures_visible"
-        private const val KEY_VOICE_COMMANDS_VISIBLE = "voice_commands_visible"
+        private const val KEY_USAGE_VISIBLE = "usage_visible"
 
     }
 
@@ -97,17 +96,12 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(KEY_SETUP_SECTION_EXPANDED, true)
         set(value) = prefs.edit().putBoolean(KEY_SETUP_SECTION_EXPANDED, value).apply()
 
-    /** Visibilidade do card "Gestures" (2026-07-24, onboarding UX) — conteúdo estático, sem
-     * efeito colateral no serviço; default true (mostrado). */
-    var gesturesVisible: Boolean
-        get() = prefs.getBoolean(KEY_GESTURES_VISIBLE, true)
-        set(value) = prefs.edit().putBoolean(KEY_GESTURES_VISIBLE, value).apply()
-
-    /** Visibilidade do card "Voice commands" (2026-07-24, onboarding UX) — default true
-     * (mostrado). */
-    var voiceCommandsVisible: Boolean
-        get() = prefs.getBoolean(KEY_VOICE_COMMANDS_VISIBLE, true)
-        set(value) = prefs.edit().putBoolean(KEY_VOICE_COMMANDS_VISIBLE, value).apply()
+    /** Visibilidade do card "Usage" (gestos + comandos de voz, 2026-09-30) — conteúdo estático,
+     * sem efeito colateral no serviço; default FALSE (recolhido). Substitui as chaves
+     * `gestures_visible`/`voice_commands_visible` (default true), que ficam órfãs no arquivo. */
+    var usageVisible: Boolean
+        get() = prefs.getBoolean(KEY_USAGE_VISIBLE, false)
+        set(value) = prefs.edit().putBoolean(KEY_USAGE_VISIBLE, value).apply()
 
     // ================= Eye Tools fork: settings screen (res/xml/preferences.xml) =================
     // Keys are shared with SettingsActivity (PreferenceFragmentCompat on the same prefs file).
@@ -154,6 +148,7 @@ class Prefs(context: Context) {
         fistTouch = prefs.getBoolean(KEY_FIST_TOUCH, false),
         headCompensation = headCompensation,
         headCalibration = headCalibration,
+        edgeBlock = prefs.getBoolean(KEY_EDGE_BLOCK, false),
     )
 
     /** Cursor head-motion compensation (off by default; no effect without [headCalibration]). */
@@ -232,6 +227,7 @@ const val KEY_LANDMARK_LOG = "hm_landmark_log"
 const val KEY_CAM_ANTI_FLICKER = "cam_anti_flicker"
 const val KEY_CAM_EXPOSURE = "cam_exposure"
 const val KEY_GESTURE_HINTS = "hm_gesture_hints"
+const val KEY_EDGE_BLOCK = "hm_edge_block"
 const val KEY_REC_STREAM = "rec_stream"
 const val KEY_REC_FPS = "rec_fps"
 const val KEY_REC_AUDIO = "rec_audio"

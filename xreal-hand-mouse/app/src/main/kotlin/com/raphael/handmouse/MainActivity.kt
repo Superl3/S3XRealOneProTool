@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.Uri
@@ -21,11 +24,14 @@ import android.provider.Settings
 import android.content.res.ColorStateList
 import android.text.method.ScrollingMovementMethod
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.PopupWindow
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
 import com.raphael.handmouse.capture.GlassesConnection
 import com.raphael.handmouse.capture.UsbPermissionRequests
@@ -92,7 +98,6 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         }
     }
     private lateinit var setupCard: View
-    private lateinit var setupOnetimeNote: View
     private lateinit var setupCompleteLabel: View
     private lateinit var btnToggleSetup: Button
     private lateinit var previewImage: ImageView
@@ -103,13 +108,12 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     private lateinit var btnTogglePreview: Button
     private lateinit var previewCard: View
     private lateinit var accessibilityStatusText: TextView
+    private lateinit var accessibilitySteps: View
     private lateinit var btnOpenAccessibilitySettings: Button
     private lateinit var dexDisplayStatusText: TextView
     private lateinit var voiceLangGroup: RadioGroup
-    private lateinit var gesturesCard: View
-    private lateinit var btnToggleGestures: Button
-    private lateinit var voiceCommandsCard: View
-    private lateinit var btnToggleVoiceCommands: Button
+    private lateinit var usageCard: View
+    private lateinit var btnToggleUsage: Button
     private lateinit var voiceCommandsText: TextView
 
     // Tarefa 5: checklist anti-kill Samsung (best-effort, ver runBestEffortIntent).
@@ -122,7 +126,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     private lateinit var recorderDetailText: TextView
     private lateinit var btnRecord: Button
     private lateinit var btnOpenLastRecording: Button
-    private lateinit var btnOpenSettings: Button
+    private lateinit var btnOpenSettings: View
     private lateinit var btnStopCapture: Button
     private lateinit var btnEnhance: Button
     private var lastRecordingUri: Uri? = null
@@ -218,19 +222,17 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         btnGrantPermissions = findViewById(R.id.btnGrantPermissions)
         btnStartCapture = findViewById(R.id.btnStartCapture)
         setupCard = findViewById(R.id.setupCard)
-        setupOnetimeNote = findViewById(R.id.setupOnetimeNote)
         setupCompleteLabel = findViewById(R.id.setupCompleteLabel)
         btnToggleSetup = findViewById(R.id.btnToggleSetup)
         previewImage = findViewById(R.id.previewImage)
         handOverlay = findViewById(R.id.handOverlay)
         accessibilityStatusText = findViewById(R.id.accessibilityStatusText)
+        accessibilitySteps = findViewById(R.id.accessibilitySteps)
         btnOpenAccessibilitySettings = findViewById(R.id.btnOpenAccessibilitySettings)
         dexDisplayStatusText = findViewById(R.id.dexDisplayStatusText)
         voiceLangGroup = findViewById(R.id.voiceLangGroup)
-        gesturesCard = findViewById(R.id.gesturesCard)
-        btnToggleGestures = findViewById(R.id.btnToggleGestures)
-        voiceCommandsCard = findViewById(R.id.voiceCommandsCard)
-        btnToggleVoiceCommands = findViewById(R.id.btnToggleVoiceCommands)
+        usageCard = findViewById(R.id.usageCard)
+        btnToggleUsage = findViewById(R.id.btnToggleUsage)
         voiceCommandsText = findViewById(R.id.voiceCommandsText)
         btnTogglePreview = findViewById(R.id.btnTogglePreview)
         previewCard = findViewById(R.id.previewCard)
@@ -246,11 +248,14 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         btnEnhance = findViewById(R.id.btnEnhanceRecordings)
         btnEnhance.setOnClickListener { onEnhanceClicked() }
 
+        // Descriptions are not always-visible text: the "info" button next to a section title opens
+        // the full text in a popup, and the title itself carries it as a tooltip (long-press / hover;
+        // the system cuts a tooltip at three lines, so the popup is the complete version).
+        bindDescription(R.id.sectionRecorderTitle, R.id.btnInfoRecorder, R.string.recorder_hint)
+        bindDescription(R.id.sectionSetupTitle, R.id.btnInfoSetup, R.string.setup_onetime_note)
+        bindDescription(R.id.sectionBatteryTitle, R.id.btnInfoBattery, R.string.battery_checklist_title)
+
         btnRecord.setOnClickListener { toggleRecording() }
-        findViewById<Button>(R.id.btnPhoto).setOnClickListener {
-            if (EyeCaptureService.getInstance() == null) appendLog(getString(R.string.recorder_not_running))
-            else EyeCaptureService.perform(this, com.raphael.handmouse.service.EyeAction.PHOTO)
-        }
         btnOpenSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         btnOpenLastRecording.setOnClickListener { openLastRecording() }
         btnStopCapture.setOnClickListener {
@@ -276,11 +281,8 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        btnToggleGestures.setOnClickListener { setGesturesVisible(!prefs.gesturesVisible) }
-        setGesturesVisible(prefs.gesturesVisible)
-
-        btnToggleVoiceCommands.setOnClickListener { setVoiceCommandsVisible(!prefs.voiceCommandsVisible) }
-        setVoiceCommandsVisible(prefs.voiceCommandsVisible)
+        btnToggleUsage.setOnClickListener { setUsageVisible(!prefs.usageVisible) }
+        setUsageVisible(prefs.usageVisible)
         updateVoiceCommandsText()
 
         // Korean or English recognition; the choice applies to the next listening session (the
@@ -345,7 +347,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
             // mata e recria Activity e serviço em ordens diferentes) nunca via estado nenhum e
             // exibia o texto inicial do wizard pra sempre, parecendo "tracking morto" com o
             // pipeline saudável.
-            onStateChanged(service.state, "Estado atual (sincronizado ao abrir)")
+            onStateChanged(service.state, getString(R.string.log_state_synced))
         }
         setPreviewVisible(prefs.previewVisible) // aplica o estado salvo + (des)registra o listener
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
@@ -406,6 +408,8 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
             if (active) R.string.accessibility_status_active else R.string.accessibility_status_inactive
         )
         tintDot(accessibilityDot, if (active) R.color.hm_accent else R.color.hm_error)
+        // The 3 steps are instructions, not a description: shown only while there is something to do.
+        accessibilitySteps.visibility = if (active) View.GONE else View.VISIBLE
     }
 
     /** Colore o dot oval de status (@drawable/status_dot) via backgroundTintList. */
@@ -488,16 +492,14 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     }
 
     /** Aplica o estado colapsado/expandido do card de Setup (2026-07-24, onboarding UX):
-     * botão Show/Hide, checkmark "✓ Complete" (só quando [Prefs.setupCompleted]) e a nota de
-     * "one-time setup" (some assim que o setup completou, mesmo se o usuário reabrir o card
-     * manualmente depois). Chamado no onCreate, no toggle manual e ao completar o setup pela
-     * primeira vez (ver [onStateChanged]). */
+     * botão Show/Hide e checkmark "✓ Complete" (só quando [Prefs.setupCompleted]). Chamado no
+     * onCreate, no toggle manual e ao completar o setup pela primeira vez (ver
+     * [onStateChanged]). */
     private fun applySetupSectionState() {
         val expanded = prefs.setupSectionExpanded
         setupCard.visibility = if (expanded) View.VISIBLE else View.GONE
         btnToggleSetup.text = getString(if (expanded) R.string.btn_preview_hide else R.string.btn_preview_show)
         setupCompleteLabel.visibility = if (prefs.setupCompleted) View.VISIBLE else View.GONE
-        setupOnetimeNote.visibility = if (prefs.setupCompleted) View.GONE else View.VISIBLE
     }
 
     // --- Captura ---
@@ -618,21 +620,12 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         if (visible) service.addTrackingListener(this) else service.removeTrackingListener(this)
     }
 
-    /** Colapsa/expande o card de gestos (2026-07-24, onboarding UX) — mesmo padrão do preview,
-     * sem efeito colateral no serviço (é conteúdo estático). */
-    private fun setGesturesVisible(visible: Boolean) {
-        prefs.gesturesVisible = visible
-        gesturesCard.visibility = if (visible) View.VISIBLE else View.GONE
-        btnToggleGestures.text =
-            getString(if (visible) R.string.btn_preview_hide else R.string.btn_preview_show)
-    }
-
-    /** Colapsa/expande o card de comandos de voz (2026-07-24, onboarding UX) — mesmo padrão do
-     * card de gestos. */
-    private fun setVoiceCommandsVisible(visible: Boolean) {
-        prefs.voiceCommandsVisible = visible
-        voiceCommandsCard.visibility = if (visible) View.VISIBLE else View.GONE
-        btnToggleVoiceCommands.text =
+    /** Colapsa/expande o card "Usage" (gestos + comandos de voz, 2026-09-30) — mesmo padrão do
+     * preview, sem efeito colateral no serviço (é conteúdo estático). */
+    private fun setUsageVisible(visible: Boolean) {
+        prefs.usageVisible = visible
+        usageCard.visibility = if (visible) View.VISIBLE else View.GONE
+        btnToggleUsage.text =
             getString(if (visible) R.string.btn_preview_hide else R.string.btn_preview_show)
     }
 
@@ -653,8 +646,21 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         btnStopCapture.isEnabled = service != null
     }
 
+    /** Texto da status pill (2026-09-30): rótulo curto por estado (a pill divide a linha com o
+     * título do app); a mensagem detalhada do serviço vai só pro log, inclusive em ERROR. */
+    private fun statusLabel(state: EyeCaptureService.PipelineState): String = when (state) {
+        EyeCaptureService.PipelineState.IDLE -> getString(R.string.state_idle)
+        EyeCaptureService.PipelineState.CONNECTING_HID -> getString(R.string.state_connecting_hid)
+        EyeCaptureService.PipelineState.CAMERA_ENABLING -> getString(R.string.state_camera_enabling)
+        EyeCaptureService.PipelineState.FINDING_CAMERA -> getString(R.string.state_finding_camera)
+        EyeCaptureService.PipelineState.REQUESTING_CAMERA_PERMISSION ->
+            getString(R.string.state_requesting_camera_permission)
+        EyeCaptureService.PipelineState.STREAMING -> getString(R.string.state_streaming)
+        EyeCaptureService.PipelineState.ERROR -> getString(R.string.state_error)
+    }
+
     override fun onStateChanged(state: EyeCaptureService.PipelineState, message: String) {
-        statusText.text = "[$state] $message"
+        statusText.text = statusLabel(state)
         appendLog(message)
         updateConnectionButtons()
 
@@ -693,10 +699,12 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         countdownTimer = object : CountDownTimer(HANDSHAKE_WARNING_SECONDS * 1000L, 1000L) {
             override fun onTick(millisUntilFinished: Long) {
                 countdownText.text = getString(R.string.countdown_accept_usb_prompt, millisUntilFinished / 1000)
+                countdownText.visibility = View.VISIBLE
             }
 
             override fun onFinish() {
                 countdownText.text = ""
+                countdownText.visibility = View.GONE
             }
         }.start()
     }
@@ -704,6 +712,7 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
     private fun stopHandshakeCountdown() {
         countdownTimer?.cancel()
         countdownText.text = ""
+        countdownText.visibility = View.GONE
     }
 
     // --- EyeCaptureService.TrackingListener (debug: preview + esqueleto + HUD) ---
@@ -744,6 +753,38 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
 
     // --- Eye Tools fork: recorder card ---
 
+    private fun bindDescription(titleId: Int, infoButtonId: Int, textRes: Int) {
+        val text = getString(textRes)
+        TooltipCompat.setTooltipText(findViewById(titleId), text)
+        findViewById<View>(infoButtonId).setOnClickListener { showDescriptionPopup(it, text) }
+    }
+
+    /** Full-width card under [anchor]; tap outside to dismiss. Does not shift the page layout. */
+    private fun showDescriptionPopup(anchor: View, text: String) {
+        val dp = resources.displayMetrics.density
+        val body = TextView(this).apply {
+            this.text = text
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(context, R.color.hm_text_primary))
+            setLineSpacing(2 * dp, 1f)
+            setPadding((14 * dp).toInt(), (12 * dp).toInt(), (14 * dp).toInt(), (12 * dp).toInt())
+            background = GradientDrawable().apply {
+                setColor(ContextCompat.getColor(context, R.color.hm_surface_raised))
+                setStroke((1 * dp).toInt(), ContextCompat.getColor(context, R.color.hm_text_secondary))
+                cornerRadius = 12 * dp
+            }
+        }
+        val margin = (16 * dp).toInt()
+        val popup = PopupWindow(body, resources.displayMetrics.widthPixels - 2 * margin,
+            ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        popup.isOutsideTouchable = true
+        popup.elevation = 8 * dp
+        val loc = IntArray(2)
+        anchor.getLocationOnScreen(loc)
+        popup.showAsDropDown(anchor, margin - loc[0], 0)
+    }
+
     /** Same dispatcher as tiles / notification / buttons: starts capture too when needed. */
     private fun toggleRecording() {
         EyeCaptureService.perform(this, com.raphael.handmouse.service.EyeAction.RECORD_TOGGLE)
@@ -773,7 +814,9 @@ class MainActivity : AppCompatActivity(), EyeCaptureService.StateListener, EyeCa
         status.lastFinishedFile?.let { details += getString(R.string.recorder_last_file, it) }
         if (status.droppedChunks > 0) details += getString(R.string.recorder_dropped, status.droppedChunks)
         status.error?.let { details += getString(R.string.recorder_error, it) }
-        recorderDetailText.text = if (details.isEmpty()) getString(R.string.recorder_hint) else details.joinToString("\n")
+        // The idle hint lives in a tooltip on the status line; the detail line only shows live info.
+        recorderDetailText.text = details.joinToString("\n")
+        recorderDetailText.visibility = if (details.isEmpty()) View.GONE else View.VISIBLE
         lastRecordingUri = status.lastFinishedUri
         btnOpenLastRecording.isEnabled = lastRecordingUri != null
     }

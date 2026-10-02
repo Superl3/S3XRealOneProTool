@@ -1,5 +1,6 @@
 package com.raphael.handmouse
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import android.content.SharedPreferences
@@ -8,15 +9,24 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.view.KeyEvent
+import android.view.View
+import androidx.appcompat.widget.TooltipCompat
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceGroupAdapter
+import androidx.preference.PreferenceScreen
+import androidx.preference.PreferenceViewHolder
+import androidx.recyclerview.widget.RecyclerView
 import com.raphael.handmouse.service.HandMouseAccessibilityService
 import com.raphael.handmouse.util.KEY_BTN_PHOTO
 import com.raphael.handmouse.util.KEY_BTN_RECORD
 import com.raphael.handmouse.util.KEY_BTN_TRACKING
+import com.raphael.handmouse.util.KEY_DATASET_LABEL
 import com.raphael.handmouse.util.KEY_DIM_START_LUX
+import com.raphael.handmouse.util.KEY_ENHANCE_DELETE_ORIGINAL
 import com.raphael.handmouse.util.KEY_HEAD_CALIBRATION
 import com.raphael.handmouse.util.KEY_HEAD_COMP
+import com.raphael.handmouse.util.KEY_REC_GYRO_LOG
 import com.raphael.handmouse.util.Prefs
 import com.raphael.handmouse.util.PREFS_FILE_NAME
 
@@ -53,6 +63,28 @@ class SettingsActivity : AppCompatActivity() {
             if (key in buttonKeys) refreshButtonSummaries()
             if (key == KEY_HEAD_CALIBRATION) refreshHeadCompSummary()
         }
+
+        /** Static descriptions move into a tooltip (long-press / hover) and the summary line is
+         * hidden. Summaries that show a value or live state (SimpleSummaryProvider, the button
+         * assignments, ambient light, head calibration, dataset label) or warn about deleting
+         * data (enhance-delete-original) or cost storage (gyro log, ~110 MB/h; also too long for
+         * a tooltip, which the system cuts at three lines) stay visible. */
+        private val summaryAlwaysVisibleKeys = buttonKeys + listOf(
+            KEY_DIM_START_LUX, KEY_HEAD_COMP, KEY_DATASET_LABEL, KEY_ENHANCE_DELETE_ORIGINAL, KEY_REC_GYRO_LOG,
+        )
+
+        @SuppressLint("RestrictedApi")
+        override fun onCreateAdapter(preferenceScreen: PreferenceScreen): RecyclerView.Adapter<*> =
+            object : PreferenceGroupAdapter(preferenceScreen) {
+                override fun onBindViewHolder(holder: PreferenceViewHolder, position: Int) {
+                    super.onBindViewHolder(holder, position)
+                    val pref = getItem(position)
+                    val tip = pref?.takeIf { it.summaryProvider == null && it.key !in summaryAlwaysVisibleKeys }
+                        ?.summary?.takeIf { it.isNotEmpty() }
+                    TooltipCompat.setTooltipText(holder.itemView, tip)
+                    if (tip != null) holder.findViewById(android.R.id.summary)?.visibility = View.GONE
+                }
+            }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             preferenceManager.sharedPreferencesName = PREFS_FILE_NAME

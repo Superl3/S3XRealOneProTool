@@ -109,6 +109,11 @@
             android:title="@string/pref_magnetic_click"
             android:summary="@string/pref_magnetic_click_sum" />
         <SwitchPreferenceCompat
+            android:key="hm_edge_block"
+            android:defaultValue="false"
+            android:title="@string/pref_edge_block"
+            android:summary="@string/pref_edge_block_sum" />
+        <SwitchPreferenceCompat
             android:key="hm_debug_overlay"
             android:defaultValue="false"
             android:title="@string/pref_debug_overlay"

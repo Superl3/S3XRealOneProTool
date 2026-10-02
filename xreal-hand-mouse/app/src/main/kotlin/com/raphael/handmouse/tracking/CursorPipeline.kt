@@ -303,7 +303,9 @@ class CursorPipeline(
         // Finger measurements shared by the pose detectors, and whether the hand is reliable
         // enough to START a pinch or fist (2026-09-29 — [HandFeatures], [HandReadiness]).
         val features = HandFeatures.from(points)
-        notReadyReason = HandReadiness.notReadyReason(result.points, result.handedness.firstOrNull()?.score())
+        notReadyReason = HandReadiness.notReadyReason(
+            result.points, result.handedness.firstOrNull()?.score(), checkEdge = settings.edgeBlock,
+        )
         val ready = notReadyReason == null
 
         // ---- Mute por thumbs-up (2026-07-23): PRIMEIRO de tudo, e único caminho vivo quando

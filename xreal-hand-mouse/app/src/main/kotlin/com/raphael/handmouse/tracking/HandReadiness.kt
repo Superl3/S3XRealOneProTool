@@ -7,6 +7,11 @@ package com.raphael.handmouse.tracking
  * both cases the fingertip distances the pinch and fist use are unreliable, so the pipeline
  * starts no new pinch press or fist. The cursor keeps moving, and gestures already in progress
  * can still end.
+ *
+ * The edge check is optional ([HandSettings.edgeBlock], off by default since 2026-10-01): in the
+ * user's own landmark logs (4 sessions, 21,844 hand frames, 09-29/09-30) it blocked 37–85 % of
+ * the frames — the wrist sits below the image whenever the arm is lowered, and fingertips cross
+ * the top edge when the hand is raised — while the handedness score alone blocked 0.2–2.7 %.
  */
 object HandReadiness {
     /** Every landmark must be at least this far inside the image (normalized units per axis). */
@@ -18,10 +23,11 @@ object HandReadiness {
     enum class Reason { EDGE, LOW_SCORE }
 
     /** [points]: normalized image landmarks ([HandTracker.Result.points]); [handednessScore]:
-     * null when MediaPipe gave none (not held against the hand). Returns null when ready. */
-    fun notReadyReason(points: List<HandPoint>, handednessScore: Float?): Reason? {
+     * null when MediaPipe gave none (not held against the hand); [checkEdge]: false skips the
+     * edge test ([HandSettings.edgeBlock]). Returns null when ready. */
+    fun notReadyReason(points: List<HandPoint>, handednessScore: Float?, checkEdge: Boolean = true): Reason? {
         val hi = 1f - EDGE_MARGIN
-        if (points.any { it.x < EDGE_MARGIN || it.x > hi || it.y < EDGE_MARGIN || it.y > hi }) return Reason.EDGE
+        if (checkEdge && points.any { it.x < EDGE_MARGIN || it.x > hi || it.y < EDGE_MARGIN || it.y > hi }) return Reason.EDGE
         if (handednessScore != null && handednessScore < MIN_HANDEDNESS_SCORE) return Reason.LOW_SCORE
         return null
     }

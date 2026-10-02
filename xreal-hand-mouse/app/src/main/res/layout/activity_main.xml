@@ -19,51 +19,68 @@
         android:clipToPadding="false">
 
         <!-- ===================== HEADER (fora de card) ===================== -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:fontFamily="sans-serif-medium"
-            android:textSize="22sp"
-            android:textColor="@color/hm_text_primary"
-            android:text="@string/app_name" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textSize="12sp"
-            android:textColor="@color/hm_text_secondary"
-            android:text="@string/app_subtitle" />
-
-        <!-- Status pill: dot colorível (setTint em runtime) + telemetria em monospace -->
+        <!-- Título à esquerda, status atual à direita (2026-09-30): sem subtítulo, mais denso. -->
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/status_pill_bg"
-            android:paddingStart="12dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp">
-
-            <View
-                android:id="@+id/statusDot"
-                android:layout_width="8dp"
-                android:layout_height="8dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/status_dot"
-                android:backgroundTint="@color/hm_text_secondary" />
+            android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/statusText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textSize="12sp"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="22sp"
                 android:textColor="@color/hm_text_primary"
-                android:text="@string/status_idle" />
+                android:text="@string/app_name" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:gravity="end|center_vertical">
+
+                <!-- Status pill: dot colorível (setTint em runtime) + telemetria em monospace -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/status_pill_bg"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="8dp"
+                        android:layout_height="8dp"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/status_dot"
+                        android:backgroundTint="@color/hm_text_secondary" />
+
+                    <TextView
+                        android:id="@+id/statusText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:maxLines="2"
+                        android:ellipsize="end"
+                        android:textSize="12sp"
+                        android:textColor="@color/hm_text_primary"
+                        android:text="@string/status_idle" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Configurações do app inteiro (não só do gravador): ícone no cabeçalho do app -->
+            <ImageButton
+                android:id="@+id/btnOpenSettings"
+                style="@style/Hm.IconButton"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_settings"
+                android:contentDescription="@string/btn_open_settings" />
         </LinearLayout>
 
         <TextView
@@ -74,15 +91,31 @@
             android:fontFamily="monospace"
             android:textSize="12sp"
             android:textColor="@color/hm_warning"
-            android:text="" />
+            android:visibility="gone" />
 
         <!-- ===================== EYE RECORDER (Eye Tools fork) ===================== -->
-        <TextView
-            style="@style/Hm.Eyebrow"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/section_recorder" />
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/sectionRecorderTitle"
+                style="@style/Hm.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="0dp"
+                android:text="@string/section_recorder" />
+
+            <ImageButton
+                android:id="@+id/btnInfoRecorder"
+                style="@style/Hm.IconButton"
+                android:src="@drawable/ic_info"
+                android:contentDescription="@string/cd_show_description" />
+        </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -116,32 +149,15 @@
                     android:fontFamily="monospace"
                     android:textSize="11sp"
                     android:textColor="@color/hm_text_secondary"
-                    android:text="@string/recorder_hint" />
+                    android:visibility="gone" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRecord"
+                    style="@style/Hm.Button.Filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnRecord"
-                        style="@style/Hm.Button.Filled"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="2"
-                        android:layout_marginEnd="4dp"
-                        android:text="@string/btn_record_start" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPhoto"
-                        style="@style/Hm.Button.Outlined"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="4dp"
-                        android:text="@string/btn_photo" />
-                </LinearLayout>
+                    android:text="@string/btn_record_start" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -160,30 +176,14 @@
                         android:text="@string/btn_open_last_recording" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnOpenSettings"
+                        android:id="@+id/btnEnhanceRecordings"
                         style="@style/Hm.Button.Outlined"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
-                        android:text="@string/btn_open_settings" />
+                        android:text="@string/btn_enhance" />
                 </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEnhanceRecordings"
-                    style="@style/Hm.Button.Outlined"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/btn_enhance" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnStopCapture"
-                    style="@style/Hm.Button.Outlined"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/btn_stop_capture" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -196,11 +196,23 @@
             android:gravity="center_vertical">
 
             <TextView
+                android:id="@+id/sectionSetupTitle"
                 style="@style/Hm.Eyebrow"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_marginBottom="0dp"
                 android:text="@string/section_setup" />
+
+            <ImageButton
+                android:id="@+id/btnInfoSetup"
+                style="@style/Hm.IconButton"
+                android:src="@drawable/ic_info"
+                android:contentDescription="@string/cd_show_description" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
 
             <TextView
                 android:id="@+id/setupCompleteLabel"
@@ -238,16 +250,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/setupOnetimeNote"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
-                    android:textSize="12sp"
-                    android:textColor="@color/hm_text_secondary"
-                    android:lineSpacingExtra="2dp"
-                    android:text="@string/setup_onetime_note" />
-
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnGrantPermissions"
                     style="@style/Hm.Button.Filled"
@@ -265,6 +267,16 @@
                     android:text="@string/btn_start_capture" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Fora do setupCard de propósito: o card colapsa sozinho após o 1º STREAMING, e
+             "desconectar" (para também a gravação) precisa continuar acessível. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnStopCapture"
+            style="@style/Hm.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/btn_stop_capture" />
 
         <!-- ===================== CARD: CURSOR NO DEX ===================== -->
         <com.google.android.material.card.MaterialCardView
@@ -375,7 +387,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ===================== GESTURES (colapsável — 2026-07-24) ===================== -->
+        <!-- ===================== USAGE: gestos + comandos de voz (colapsável, default recolhido — 2026-09-30) ===================== -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -389,88 +401,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/section_gestures" />
+                android:layout_marginBottom="0dp"
+                android:text="@string/section_usage" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnToggleGestures"
+                android:id="@+id/btnToggleUsage"
                 style="@style/Hm.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minWidth="0dp"
-                android:text="@string/btn_preview_hide" />
+                android:text="@string/btn_preview_show" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/gesturesCard"
+            android:id="@+id/usageCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="@color/hm_surface"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/hm_stroke"
-            app:strokeWidth="1dp"
-            app:contentPadding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/hm_text_primary"
-                android:lineSpacingExtra="4dp"
-                android:text="@string/gestures_list" />
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ===================== VOICE COMMANDS (colapsável, sensível ao idioma — 2026-07-24) ===================== -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                style="@style/Hm.Eyebrow"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/section_voice_commands" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnToggleVoiceCommands"
-                style="@style/Hm.Button.Outlined"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="0dp"
-                android:text="@string/btn_preview_hide" />
-        </LinearLayout>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/voiceCommandsCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardBackgroundColor="@color/hm_surface"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/hm_stroke"
-            app:strokeWidth="1dp"
-            app:contentPadding="16dp">
-
-            <TextView
-                android:id="@+id/voiceCommandsText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/hm_text_primary"
-                android:lineSpacingExtra="4dp"
-                android:text="@string/voice_commands_list_en" />
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ===================== CARD: BATERIA (SAMSUNG) ===================== -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:visibility="gone"
             app:cardBackgroundColor="@color/hm_surface"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
@@ -487,15 +434,72 @@
                     style="@style/Hm.Eyebrow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/section_battery" />
+                    android:text="@string/section_gestures" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textSize="12sp"
-                    android:textColor="@color/hm_text_secondary"
-                    android:lineSpacingExtra="2dp"
-                    android:text="@string/battery_checklist_title" />
+                    android:textSize="13sp"
+                    android:textColor="@color/hm_text_primary"
+                    android:lineSpacingExtra="4dp"
+                    android:text="@string/gestures_list" />
+
+                <TextView
+                    style="@style/Hm.Eyebrow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/section_voice_commands" />
+
+                <TextView
+                    android:id="@+id/voiceCommandsText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="13sp"
+                    android:textColor="@color/hm_text_primary"
+                    android:lineSpacingExtra="4dp"
+                    android:text="@string/voice_commands_list_en" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ===================== BATTERY (SAMSUNG): título fora do card, como as outras seções ===================== -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/sectionBatteryTitle"
+                style="@style/Hm.Eyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="0dp"
+                android:text="@string/section_battery" />
+
+            <ImageButton
+                android:id="@+id/btnInfoBattery"
+                style="@style/Hm.IconButton"
+                android:src="@drawable/ic_info"
+                android:contentDescription="@string/cd_show_description" />
+        </LinearLayout>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/hm_surface"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/hm_stroke"
+            app:strokeWidth="1dp"
+            app:contentPadding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
                 <!-- Empilhados verticalmente e full width — antes espremidos em 3 colunas a 9sp -->
                 <com.google.android.material.button.MaterialButton
@@ -503,7 +507,6 @@
                     style="@style/Hm.Button.Checklist"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
                     android:text="@string/btn_battery_app_settings" />
 
                 <com.google.android.material.button.MaterialButton
@@ -540,6 +543,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginBottom="0dp"
                 android:text="@string/section_preview" />
 
             <com.google.android.material.button.MaterialButton

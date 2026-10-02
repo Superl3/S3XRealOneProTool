@@ -40,6 +40,9 @@ data class HandSettings(
     /** Remove head rotation from the hand position ([HeadMotionCompensator]); needs [headCalibration]. */
     val headCompensation: Boolean = false,
     val headCalibration: com.raphael.handmouse.imu.ImuCameraCalibration? = null,
+    /** A landmark within [HandReadiness.EDGE_MARGIN] of the image edge blocks new pinches and
+     * fists ([HandReadiness]). Off by default: it blocked 37–85 % of real hand frames. */
+    val edgeBlock: Boolean = false,
 ) {
     companion object {
         const val PINCH_HYSTERESIS = 0.10f
@@ -68,6 +71,7 @@ data class HandSettings(
             fistTouch: Boolean = false,
             headCompensation: Boolean = false,
             headCalibration: com.raphael.handmouse.imu.ImuCameraCalibration? = null,
+            edgeBlock: Boolean = false,
         ): HandSettings {
             val sens = sensitivityPct.coerceIn(50, 200) / 100f
             val p = pinch.coerceIn(0, 100) / 100f
@@ -91,6 +95,7 @@ data class HandSettings(
                 layerStep = layerStepThousandths.coerceIn(25, 100) / 1000f,
                 headCompensation = headCompensation,
                 headCalibration = headCalibration,
+                edgeBlock = edgeBlock,
             )
         }
     }
