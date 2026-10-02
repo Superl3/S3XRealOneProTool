@@ -70,6 +70,9 @@ dependencies {
     // Eye Tools fork: settings screen (PreferenceFragmentCompat).
     implementation("androidx.preference:preference-ktx:1.2.1")
 
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+
     // MediaPipe HandLandmarker (LIVE_STREAM/GPU) — PLANO.md §3.2. 0.10.35 é a versão estável
     // mais recente no repositório Maven do Google (dl.google.com/dl/android/maven2; NÃO existe
     // no Maven Central — verificado nesta sessão) — mais nova que a 0.10.29 citada no plano.

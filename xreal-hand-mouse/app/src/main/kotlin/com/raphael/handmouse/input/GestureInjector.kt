@@ -117,6 +117,38 @@ class GestureInjector(private val service: AccessibilityService) {
         dispatchTap(x, y, displayId, isRetry = false)
     }
 
+    fun swipe(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        durationMs: Long,
+        displayId: Int,
+    ) {
+        val path = Path().apply {
+            moveTo(x1, y1)
+            lineTo(x2, y2)
+        }
+        val gesture = GestureDescription.Builder()
+            .setDisplayId(displayId)
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs.coerceAtLeast(80L)))
+            .build()
+        val accepted = service.dispatchGesture(
+            gesture,
+            object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    Log.d(TAG, "swipe completed display=$displayId ($x1,$y1)->($x2,$y2)")
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    Log.w(TAG, "swipe cancelled display=$displayId")
+                }
+            },
+            null,
+        )
+        if (!accepted) Log.w(TAG, "dispatchGesture refused swipe display=$displayId")
+    }
+
     private fun dispatchTap(x: Float, y: Float, displayId: Int, isRetry: Boolean) {
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()

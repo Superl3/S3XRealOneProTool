@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.CAMERA"/> <!-- pré-condição do grant USB p/ classe vídeo -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- Tarefa 5: notificação full-screen-intent na desconexão USB (PLANO.md Fase 5) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
@@ -44,6 +45,13 @@
              @android:Theme.Material antes de existir este tema). -->
 
 
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <service
             android:name=".service.RecordTileService"
             android:exported="true"
@@ -94,6 +102,8 @@
                 <data android:scheme="xreal-eye" android:host="action"/>
             </intent-filter>
         </activity>
+
+        <activity android:name=".remote.RemoteAppPickerActivity" android:exported="false"/>
 
         <activity android:name=".SettingsActivity" android:exported="false"
                   android:parentActivityName=".MainActivity"/>

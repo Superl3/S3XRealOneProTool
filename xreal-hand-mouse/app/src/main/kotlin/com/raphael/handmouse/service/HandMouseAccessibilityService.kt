@@ -33,6 +33,7 @@ import com.raphael.handmouse.tracking.CursorPipeline
 import com.raphael.handmouse.tracking.DisplayBounds
 import com.raphael.handmouse.tracking.MenuAction
 import com.raphael.handmouse.input.WindowController
+import com.raphael.handmouse.remote.RemoteDexController
 import com.raphael.handmouse.util.KEY_BTN_PHOTO
 import com.raphael.handmouse.util.KEY_BTN_RECORD
 import com.raphael.handmouse.util.KEY_BTN_TRACKING
@@ -127,6 +128,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
     private lateinit var cursorPipeline: CursorPipeline
     private lateinit var displayMonitor: DexDisplayMonitor
     private lateinit var prefs: Prefs
+    private lateinit var remoteController: RemoteDexController
     private var voiceController: VoiceCommandController? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -213,6 +215,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
         if (::cursorPipeline.isInitialized) {
             EyeCaptureService.getInstance()?.removeTrackingListener(cursorPipeline)
         }
+        if (::remoteController.isInitialized) remoteController.destroy()
         if (::displayMonitor.isInitialized) displayMonitor.stop()
         if (::overlay.isInitialized) overlay.hide()
         voiceController?.shutdown() // sessão de voz de uma conexão anterior (rebind)
@@ -260,6 +263,12 @@ class HandMouseAccessibilityService : AccessibilityService() {
         displayMonitor = DexDisplayMonitor(this).apply {
             listener = dexDisplayListener
         }
+        remoteController = RemoteDexController(
+            service = this,
+            cursor = overlay,
+            gestures = gestureInjector,
+            selectionProvider = { lastSelection },
+        )
         // Eye Tools fork: palm-menu actions.
         cursorPipeline.menuActionHandler = CursorPipeline.MenuActionHandler { action, x, y, display ->
             when (action) {
@@ -291,6 +300,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(overlayRetryRunnable)
         if (::prefs.isInitialized) prefs.raw.unregisterOnSharedPreferenceChangeListener(settingsListener)
         EyeCaptureService.getInstance()?.removeTrackingListener(cursorPipeline)
+        if (::remoteController.isInitialized) remoteController.destroy()
         if (::displayMonitor.isInitialized) displayMonitor.stop()
         if (::overlay.isInitialized) overlay.hide()
         voiceController?.shutdown()
@@ -378,6 +388,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
             lastSelection = null
             cursorPipeline.updateBounds(null)
             overlay.hide()
+            if (::remoteController.isInitialized) remoteController.syncDisplay()
             return
         }
 
@@ -390,6 +401,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
 
         lastSelection = selection
         cursorPipeline.updateBounds(bounds?.let { DisplayBounds(it.width(), it.height(), display.displayId) })
+        if (::remoteController.isInitialized) remoteController.syncDisplay()
         applyDimSettings()
         showOverlayWithRetry(display.displayId, attempt = 0)
     }
@@ -427,6 +439,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
                 lastSelection = DisplaySelection(displayId, bounds.width(), bounds.height())
                 cursorPipeline.updateBounds(DisplayBounds(bounds.width(), bounds.height(), displayId))
             }
+            if (::remoteController.isInitialized) remoteController.syncDisplay()
             return
         }
 
@@ -438,6 +451,7 @@ class HandMouseAccessibilityService : AccessibilityService() {
             // Zera lastSelection para que um próximo evento idêntico não seja descartado pelo
             // dedupe — dá nova chance de mostrar o cursor.
             lastSelection = null
+            if (::remoteController.isInitialized) remoteController.syncDisplay()
         }
     }
 
