@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
  * [RemoteActions.padTouch], so the jolt of the press does not move the cursor a button acts at.
  * A phone screen that is off counts as a collapsed panel for [RemoteActions.setPanelExpanded].
  * The panel's controls without a long action act when the finger lands ([actOnPress]: the
- * switches, ⚙ −, ⌨, the enlarge switch and the corner chip), because a touch the accessibility
+ * switches, ⚙ −, ⌨ and the enlarge button), because a touch the accessibility
  * input filter cancels (a mouse event during it, spec section O) never clicks. A control with a
  * long action (back, home, maximize, the air mouse button: [tapOrHold]; the dock slots) cannot know
  * at the landing which one it is, so it taps at the lift, or at such a cancel while still a tap
@@ -277,8 +277,17 @@ class RemoteControllerOverlay(
      */
     private var menuTouch = false
 
-    /** The menu's air mouse switch asked for the re-render coming next: it renders the menu open. */
-    private var reopenMenu = false
+    /**
+     * The views that show whether the air mouse is on (the menu's switch, the dot on the more
+     * button, the home button's description, the touchpad's hint), updated in place when it is
+     * switched ([airMouseChanged]) instead of re-rendering the panel. Null while not on screen.
+     */
+    private var airButtonView: View? = null
+    private var airDotView: View? = null
+    private var homeButtonView: View? = null
+
+    /** Whether the touchpad's hint on screen lists the round buttons ([padHint]). */
+    private var padHintButtons = false
 
     /** The chip's hold last logged as shown (null: hidden), so each show and hide is logged once. */
     private var chipLogged: Int? = null
@@ -304,8 +313,46 @@ class RemoteControllerOverlay(
         },
     )
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        root?.post { requestRender() }
+    /**
+     * A saved setting changed: the panel follows it. The sliders' values are on screen already as
+     * they are dragged, and the air mouse switch is followed in place ([airMouseChanged]); anything
+     * else re-renders (in the same window, [render]).
+     */
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            RemoteDockPrefs.KEY_TOUCHPAD_SPEED, RemoteDockPrefs.KEY_AIR_SENSITIVITY -> Unit
+            RemoteDockPrefs.KEY_AIR_MOUSE -> root?.post { airMouseChanged() }
+            // One render for a write of several keys (the floating button's spot and corner).
+            else -> if (root != null) {
+                mainHandler.removeCallbacks(renderForPrefs)
+                mainHandler.post(renderForPrefs)
+            }
+        }
+    }
+
+    private val renderForPrefs = Runnable { requestRender() }
+
+    /**
+     * The air mouse was switched on or off: the views that show it change in place (no re-render, so
+     * the ⋯ menu the switch sits in stays open and nothing on the panel moves or blinks).
+     */
+    private fun airMouseChanged() {
+        val on = prefs.airMouse
+        airButtonView?.let {
+            setPadButtonActive(it, on)
+            it.contentDescription = airDescription(on)
+        }
+        airDotView?.visibility = if (on) View.VISIBLE else View.GONE
+        homeButtonView?.contentDescription = homeDescription(on)
+        (padView as? TextView)?.text = padHint(padHintButtons)
+        headStatusLine?.let { line ->
+            val status = headStatusText()
+            line.text = status
+            line.visibility = if (status != null) View.VISIBLE else View.GONE
+        }
+        suggestion.onAirMouse(on, SystemClock.uptimeMillis())
+        suggestionChanged()
+        android.util.Log.d(logTag, "air mouse on=$on: panel updated in place")
     }
 
     init {
@@ -456,10 +503,17 @@ class RemoteControllerOverlay(
         render(expanded)
     }
 
+    /**
+     * Builds the panel ([open]) or the floating button for the current state. The window on screen
+     * is kept and only its content and layout are replaced ([RotatedFrame] children, then
+     * `updateViewLayout`): removing and adding the window made the whole panel blink at every
+     * re-render (user 2026-11-19). A new window is added only when there is none, or when updating
+     * the old one fails. The raw-touch mapping waits for the new layout ([rawPlacement] checks
+     * `isLayoutRequested`), as after a turn.
+     */
     private fun render(open: Boolean) {
         resetPad()
-        root?.let { runCatching { wm.removeView(it) } }
-        root = null
+        val reused = root as? RotatedFrame
         headStatusLine = null
         rotateChip = null
         expanded = open
@@ -475,10 +529,10 @@ class RemoteControllerOverlay(
         val turns = contentTurns()
         val landscape = PanelOrientationMath.isLandscapeHold(hold, naturalLandscape)
         renderedMaximized = open && padMaximized
-        val frame = RotatedFrame(context)
+        val frame = reused ?: RotatedFrame(context).also { f -> f.onTouchDispatched = { event -> panelTouch(f, event) } }
         frame.apply {
+            removeAllViews()
             quarterTurns = turns
-            onTouchDispatched = { event -> panelTouch(frame, event) }
             if (open) {
                 val size = if (padMaximized) FrameLayout.LayoutParams.MATCH_PARENT else FrameLayout.LayoutParams.WRAP_CONTENT
                 addView(
@@ -486,7 +540,7 @@ class RemoteControllerOverlay(
                     FrameLayout.LayoutParams(size, size),
                 )
             } else {
-                val size = dp(if (appInFront) MINI_BUTTON_DP else 48)
+                val size = miniSizePx()
                 addView(collapsedButton(), FrameLayout.LayoutParams(size, size))
             }
         }
@@ -498,20 +552,39 @@ class RemoteControllerOverlay(
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            if (renderedMaximized) placeMaximized(this, layoutRotation) else placeAtCorner(this, turns, frame)
+            when {
+                renderedMaximized -> placeMaximized(this, layoutRotation)
+                !open && placeMini(this, layoutRotation) -> Unit
+                else -> placeAtCorner(this, turns, frame)
+            }
         }
-        try {
-            wm.addView(frame, lp)
-            root = frame
+        var how = "in place"
+        if (reused != null) {
+            try {
+                wm.updateViewLayout(frame, lp)
+            } catch (e: Exception) {
+                android.util.Log.w(logTag, "updateViewLayout failed on render; replacing the window", e)
+                runCatching { wm.removeView(frame) }
+                root = null
+            }
+        }
+        if (root == null) {
+            how = "new window"
+            try {
+                wm.addView(frame, lp)
+                root = frame
+            } catch (e: Exception) {
+                root = null
+                android.util.Log.e(logTag, "addView failed open=" + open + " display=" + context.display?.displayId, e)
+            }
+        }
+        if (root != null) {
             android.util.Log.d(
                 logTag,
-                "render open=" + open + " display=" + context.display?.displayId + " corner=" + prefs.corner +
+                "render ($how) open=" + open + " display=" + context.display?.displayId + " corner=" + prefs.corner +
                     " hold=" + hold + " displayRotation=" + orientationTracker.displayRotation + " turns=" + turns +
                     " landscape=" + landscape,
             )
-        } catch (e: Exception) {
-            root = null
-            android.util.Log.e(logTag, "addView failed open=" + open + " display=" + context.display?.displayId, e)
         }
         // The air mouse turns its axes exactly when the panel visibly turns, never mid-touch.
         actions.onDeviceOrientation(hold)
@@ -538,7 +611,14 @@ class RemoteControllerOverlay(
         val (gapLeft, gapRight) = sideGestureGaps()
         lp.x = maxOf(gapLeft, gapRight)
         // The bottom may touch the screen edge (user 2026-11-19); a top corner keeps its margin.
-        lp.y = if (lp.gravity and Gravity.VERTICAL_GRAVITY_MASK == Gravity.BOTTOM) 0 else dp(if (oddTurn) 10 else 18)
+        // The floating button stays above the bottom gesture strip, or dragging it up is taken by
+        // the launcher's swipe-up (home) gesture (measured 2026-11-19: "[Gesture Monitor] swipe-up
+        // is stealing input gesture").
+        lp.y = if (lp.gravity and Gravity.VERTICAL_GRAVITY_MASK == Gravity.BOTTOM) {
+            if (expanded) 0 else bottomGestureGap()
+        } else {
+            dp(if (oddTurn) 10 else 18)
+        }
         val screenWidth = wm.currentWindowMetrics.bounds.width()
         val allowed = screenWidth - gapLeft - gapRight
         frame.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
@@ -547,11 +627,51 @@ class RemoteControllerOverlay(
     }
 
     /**
+     * Puts the floating button where the user dragged it ([RemoteDockPrefs.miniPosition], a spot on
+     * the glass) for display [rotation], on the screen and out of the side gaps. False when it was
+     * never dragged (or the screen size is not known yet): the caller places it at the corner.
+     */
+    private fun placeMini(lp: WindowManager.LayoutParams, rotation: Int): Boolean {
+        val (fx, fy) = prefs.miniPosition ?: return false
+        if (naturalWidth == 0 || naturalHeight == 0) return false
+        val oddTurn = (rotation and 1) == 1
+        val (cx, cy) = naturalToDisplay(fx, fy, rotation, naturalWidth, naturalHeight)
+        val (gapLeft, gapRight) = sideGestureGaps()
+        val (x, y) = MiniButtonMath.clampedTopLeft(
+            cx,
+            cy,
+            miniSizePx(),
+            if (oddTurn) naturalHeight else naturalWidth,
+            if (oddTurn) naturalWidth else naturalHeight,
+            gapLeft,
+            gapRight,
+            bottomGestureGap(),
+        )
+        lp.gravity = Gravity.TOP or Gravity.LEFT
+        lp.x = x
+        lp.y = y
+        lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+        return true
+    }
+
+    /** The floating button's size: smaller while this app's own screen is in front. */
+    private fun miniSizePx(): Int = dp(if (appInFront) MINI_BUTTON_DP else 48)
+
+    /**
      * Left and right widths the panel leaves free for the system edge gestures: half the
      * system-gesture inset (the back-gesture strip with gesture navigation, about 38 dp on the
      * SM-S937N), within [EDGE_GAP_MIN_DP]..[EDGE_GAP_MAX_DP]. The whole inset left too little of the
      * screen (user 2026-11-19); a back swipe starts at the very edge, so half of the strip is enough.
      */
+    /** Height of the bottom system-gesture strip (swipe-up home) plus a small gap. */
+    private fun bottomGestureGap(): Int {
+        val g = runCatching {
+            wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemGestures())
+        }.getOrNull()
+        return (g?.bottom ?: 0) + dp(4)
+    }
+
     private fun sideGestureGaps(): Pair<Int, Int> {
         val g = runCatching {
             wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemGestures())
@@ -643,7 +763,12 @@ class RemoteControllerOverlay(
             return
         }
         frame.quarterTurns = turns
-        if (renderedMaximized) placeMaximized(lp, rotation) else placeAtCorner(lp, turns, frame)
+        when {
+            renderedMaximized -> placeMaximized(lp, rotation)
+            // The floating button keeps its spot on the glass.
+            !expanded && placeMini(lp, rotation) -> Unit
+            else -> placeAtCorner(lp, turns, frame)
+        }
         // Raw contacts are placed again once this layout has run (RotatedFrame.isLayoutRequested).
         layoutRotation = rotation
         try {
@@ -695,24 +820,104 @@ class RemoteControllerOverlay(
         menuTouch = false
     }
 
-    /** The floating button; smaller and faded while this app's own screen is in front ([appInFront]). */
+    /**
+     * The floating button; smaller and faded while this app's own screen is in front ([appInFront]).
+     * A tap opens the panel; a drag moves the button anywhere on the screen (out of the side gaps),
+     * moving its window in place as the finger goes. At the lift the spot is saved, with the screen
+     * corner nearest to it as the corner the panel opens at ([RemoteDockPrefs.setMiniPosition],
+     * [MiniButtonMath.uprightCorner]), so dragging also chooses where the panel appears. A touch the
+     * input filter cancels while it is still a tap opens the panel, like a dock slot's.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun collapsedButton(): View = textButton("◉").apply {
-        contentDescription = "DeX Remote 열기"
+        contentDescription = "DeX Remote 열기 (끌어서 옮기기)"
         if (appInFront) {
             textSize = 15f
             alpha = MINI_ALPHA
         }
-        setOnClickListener {
+        val slop = ViewConfiguration.get(context).scaledTouchSlop
+        var downAt = 0L
+        var downRawX = 0f
+        var downRawY = 0f
+        var startX = 0
+        var startY = 0
+        var dragging = false
+        fun open() {
             android.util.Log.d(logTag, "click ◉ (open)")
             // Through the deferral: another finger still on the panel keeps its window until it lifts.
-            expanded = true
-            requestRender()
+            mainHandler.post {
+                expanded = true
+                requestRender()
+            }
         }
-        setOnLongClickListener {
-            android.util.Log.d(logTag, "long click ◉ (corner)")
-            prefs.cycleCorner()
+        fun moveTo(frame: View, lp: WindowManager.LayoutParams, rawX: Float, rawY: Float) {
+            val size = miniSizePx()
+            val bounds = wm.currentWindowMetrics.bounds
+            val (gapLeft, gapRight) = sideGestureGaps()
+            val (x, y) = MiniButtonMath.clampedTopLeft(
+                startX + (rawX - downRawX) + size / 2f,
+                startY + (rawY - downRawY) + size / 2f,
+                size,
+                bounds.width(),
+                bounds.height(),
+                gapLeft,
+                gapRight,
+                bottomGestureGap(),
+            )
+            if (x == lp.x && y == lp.y && lp.gravity == (Gravity.TOP or Gravity.LEFT)) return
+            lp.gravity = Gravity.TOP or Gravity.LEFT
+            lp.x = x
+            lp.y = y
+            runCatching { wm.updateViewLayout(frame, lp) }
+        }
+        fun save(lp: WindowManager.LayoutParams) {
+            val size = miniSizePx()
+            val (fx, fy) = MiniButtonMath.displayToNatural(
+                lp.x + size / 2f,
+                lp.y + size / 2f,
+                layoutRotation,
+                naturalWidth,
+                naturalHeight,
+            )
+            val corner = MiniButtonMath.uprightCorner(fx, fy, prefs.panelHold)
+            android.util.Log.d(logTag, "◉ dragged to (${lp.x}, ${lp.y}) natural=($fx, $fy) panel corner=$corner")
+            prefs.setMiniPosition(fx, fy, corner)
+        }
+        setOnTouchListener { _, event ->
+            val frame = root
+            val lp = frame?.layoutParams as? WindowManager.LayoutParams
+            if (frame == null || lp == null || naturalWidth == 0) {
+                if (event.actionMasked == MotionEvent.ACTION_UP) open()
+                return@setOnTouchListener true
+            }
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downAt = event.eventTime
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    dragging = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!dragging && abs(event.rawX - downRawX) + abs(event.rawY - downRawY) > slop) {
+                        dragging = true
+                        // From here on the window is placed by its top-left on the screen.
+                        val at = IntArray(2)
+                        frame.getLocationOnScreen(at)
+                        startX = at[0]
+                        startY = at[1]
+                    }
+                    if (dragging) moveTo(frame, lp, event.rawX, event.rawY)
+                }
+                MotionEvent.ACTION_UP -> if (dragging) save(lp) else open()
+                MotionEvent.ACTION_CANCEL -> when {
+                    dragging -> save(lp)
+                    event.flags and MotionEvent.FLAG_CANCELED != 0 && event.eventTime - downAt < RemoteControlMath.TAP_MAX_MS -> open()
+                }
+            }
             true
         }
+        // TalkBack or a keyboard: no touch, the click opens.
+        setOnClickListener { open() }
     }
 
     /**
@@ -830,16 +1035,14 @@ class RemoteControllerOverlay(
         val overlays = ArrayList<View>()
         val margin = PAD_BUTTON_MARGIN_DP
         val top = Gravity.TOP or Gravity.END
-        val enlarge = TextView(context).apply {
-            text = if (padMaximized) "축소" else "확대"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(if (padMaximized) Color.WHITE else OFF_TEXT_COLOR)
-            background = if (padMaximized) rounded(ACTIVE_COLOR, 14f) else outlined(OFF_STROKE_COLOR, 14f)
-            contentDescription = if (padMaximized) "터치패드 원래 크기로" else "터치패드 화면 가득"
-            isSelected = padMaximized
-            isClickable = true
+        // A round icon button like the others (user 2026-11-19): ⤢ enlarges, ⤡ shrinks back.
+        val enlarge = padButton(
+            if (padMaximized) "⤡" else "⤢",
+            if (padMaximized) "터치패드 원래 크기로" else "터치패드 화면 가득",
+            active = padMaximized,
+        ).apply {
+            // The arrow glyphs render small at the shared size (device screenshot 2026-11-19).
+            textSize = 24f
             // The re-render waits for the lift (requestRender).
             actOnPress(this, "$text (touchpad size)") {
                 padMaximized = !padMaximized
@@ -849,13 +1052,13 @@ class RemoteControllerOverlay(
         // Right end: the red close (collapse) button, then the enlarge switch left of it (user
         // 2026-11-19). Without the floating buttons the switch takes the right end.
         val closeDp = if (showButtons) PAD_BUTTON_DP + margin else 0
-        addView(enlarge, FrameLayout.LayoutParams(dp(ENLARGE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), top).apply {
+        addView(enlarge, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), top).apply {
             topMargin = dp(margin)
             marginEnd = dp(margin + closeDp)
         })
         overlays += enlarge
         // What lies left of the enlarge switch, from the right edge.
-        var endDp = margin + closeDp + ENLARGE_CHIP_WIDTH_DP + margin
+        var endDp = margin + closeDp + PAD_BUTTON_DP + margin
         if (showButtons) {
             val collapse = collapseButton()
             addView(collapse, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), top).apply {
@@ -876,10 +1079,7 @@ class RemoteControllerOverlay(
             })
             overlays += menu
             menuPopup = menu
-            // A re-render the menu's own air mouse switch caused: the menu stays open.
-            if (reopenMenu) setMenuOpen(true)
         }
-        reopenMenu = false
         // In the top row, between the more button and the controls at the right: it overlaps neither.
         val chip = rotateChipView()
         addView(chip, FrameLayout.LayoutParams(dp(ROTATE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), top).apply {
@@ -902,43 +1102,41 @@ class RemoteControllerOverlay(
         val air = prefs.airMouse
         val face = padButton("⋯", "메뉴 열기/닫기 (공중 마우스, 키보드, 설정, 빠른 앱)" + if (air) ", 공중 마우스 켜짐" else "")
         addView(face, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        if (air) {
-            val dot = View(context).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(AIR_DOT_COLOR)
-                    setStroke(dp(1), Color.WHITE)
-                }
+        // Made hidden too, so switching the air mouse shows it in place (airMouseChanged).
+        val dot = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(AIR_DOT_COLOR)
+                setStroke(dp(1), Color.WHITE)
             }
-            addView(dot, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.END))
+            visibility = if (air) View.VISIBLE else View.GONE
         }
+        addView(dot, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.END))
+        airDotView = dot
         moreButtonFace = face
         actOnPress(face, "⋯ (menu)", onDown = { menuTouch = true }) { setMenuOpen(menuPopup?.visibility != View.VISIBLE) }
     }
 
     /**
-     * The air mouse switch in the menu: accent-filled while on. Tap turns it on or off and keeps the
-     * menu open (the re-render it causes reopens it, [reopenMenu]); a long press brings the cursor to
+     * The air mouse switch in the menu: accent-filled while on. Tap turns it on or off; the panel
+     * follows in place ([airMouseChanged]), so the menu stays open. A long press brings the cursor to
      * the middle of the DeX display ([RemoteActions.recenter], aim at the middle of the screen while
      * holding).
      */
     private fun airButton(): View {
         val on = prefs.airMouse
-        return padButton(
-            "✈",
-            "공중 마우스 ${if (on) "켜짐" else "꺼짐"} (탭 = 켜기/끄기, 길게 = 커서를 가운데로)",
-            active = on,
-        ).also { b ->
-            val tap = {
-                reopenMenu = true
-                actions.setAirMouse(!prefs.airMouse)
-            }
-            tapOrHold(b, "✈ air mouse (was " + (if (on) "on" else "off") + ")", tap) {
+        return padButton("✈", airDescription(on), active = on).also { b ->
+            airButtonView = b
+            tapOrHold(b, "✈ air mouse", { actions.setAirMouse(!prefs.airMouse) }) {
                 actions.recenter()
                 true
             }
         }
     }
+
+    private fun airDescription(on: Boolean) = "공중 마우스 ${if (on) "켜짐" else "꺼짐"} (탭 = 켜기/끄기, 길게 = 커서를 가운데로)"
+
+    private fun homeDescription(air: Boolean) = if (air) "DeX 홈, 길게 누르면 커서를 가운데로" else "DeX 홈"
 
     /** Brings up the soft keyboard for the input field focused on DeX (one shot; Back hides it). */
     private fun keyboardButton(): View =
@@ -953,7 +1151,7 @@ class RemoteControllerOverlay(
     private fun settingsButton(): View =
         padButton(
             "⚙",
-            if (settingsOpen) "설정 닫기" else "설정 열기 (속도, 감도, 머리 보정, 커서, 위치, 스크롤)",
+            if (settingsOpen) "설정 닫기" else "설정 열기 (속도, 감도, 머리 보정, 커서, 스크롤)",
             active = settingsOpen,
         ).also { b ->
             // The re-render waits for the lift (requestRender), and closes the menu.
@@ -1156,15 +1354,12 @@ class RemoteControllerOverlay(
         }
 
     /** Tap: home. Long press: the cursor to the middle of the display, only while the air mouse is on. */
-    private fun homeButton(): View {
-        val air = prefs.airMouse
-        val description = if (air) "DeX 홈, 길게 누르면 커서를 가운데로" else "DeX 홈"
-        return holdButton("⌂", description, { actions.home() }) {
+    private fun homeButton(): View =
+        holdButton("⌂", homeDescription(prefs.airMouse), { actions.home() }) {
             // Read when it fires: the air mouse may have been switched since the render.
             if (prefs.airMouse) actions.recenter()
             prefs.airMouse
-        }
-    }
+        }.also { homeButtonView = it }
 
     /**
      * Maximize or restore the window under the cursor. A long press does the same as a tap (user
@@ -1204,9 +1399,9 @@ class RemoteControllerOverlay(
      * The settings sheet with each row's height in dp (a switch or button row is [rowDp]): the
      * touchpad speed and air mouse sensitivity sliders, the head compensation switch, the switch
      * that hides the touchpad's round buttons while it is enlarged, the DeX system cursor switch
-     * (off by default, it needs Shizuku: spec section S), and the floating corner (cycles on tap)
-     * beside the manual rotate ([rotateNowButton]) and the scroll buttons (two fingers on the
-     * touchpad do the same).
+     * (off by default, it needs Shizuku: spec section S), and the manual rotate ([rotateNowButton])
+     * beside the scroll buttons (two fingers on the touchpad do the same). The floating button's
+     * place is chosen by dragging it, so the sheet has no corner control any more.
      */
     private fun settingsRows(rowDp: Int): List<Pair<View, Int>> {
         val system = actions.systemCursorActive
@@ -1230,7 +1425,6 @@ class RemoteControllerOverlay(
             hidePadButtonsToggle() to rowDp,
             cursorToggle() to rowDp,
             buttonRow(
-                valueChip("위치", cornerLabel(prefs.corner), "플로팅 버튼 위치 변경") { prefs.cycleCorner() },
                 rotateNowButton(),
                 momentary(if (system) "↑ 스크롤" else "↑ 스와이프", if (system) "커서 위치에서 위로 스크롤 (휠 5칸)" else "커서 아래 창 위로 스와이프", textSize = 12f) {
                     actions.swipeActive(true)
@@ -1563,30 +1757,6 @@ class RemoteControllerOverlay(
         }
     }
 
-    /** A setting that cycles on tap: a small caption over its current value. */
-    private fun valueChip(caption: String, value: String, description: String, run: () -> Unit): View =
-        LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = outlined(Color.argb(255, 88, 94, 104), 12f, fill = Color.argb(220, 40, 44, 50))
-            contentDescription = "$description, 현재 $value"
-            isClickable = true
-            actOnPress(this, "$caption ($value)", run = run)
-            addView(TextView(context).apply {
-                text = caption
-                textSize = 10f
-                setTextColor(OFF_TEXT_COLOR)
-                gravity = Gravity.CENTER
-            })
-            addView(TextView(context).apply {
-                text = "$value ▸"
-                textSize = 14f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-            })
-        }
-
     /** Views of equal width in one row, 4 dp apart. */
     private fun buttonRow(vararg views: View): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -1654,15 +1824,9 @@ class RemoteControllerOverlay(
      */
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun touchpad(buttonsShown: Boolean): View {
-        val system = actions.systemCursorActive
-        val drag = if (appPrefs.remoteTapDrag) TAP_DRAG_HINT else HOLD_DRAG_HINT
+        padHintButtons = buttonsShown
         val pad = TextView(context).apply {
-            text = when {
-                prefs.airMouse -> "공중 마우스 · 폰을 겨누세요\n탭 = 클릭 · 길게 = 드래그" +
-                    (if (system) "\n$SYSTEM_TWO_FINGER_HINT" else "") + "\n$THREE_FINGER_HINT\n$AIR_HOLD_HINT"
-                system -> "DeX 커서 TOUCHPAD\n$drag\n$SYSTEM_TWO_FINGER_HINT\n$THREE_FINGER_HINT\n$HOLD_HINT"
-                else -> "DeX TOUCHPAD\n$drag\n두 손가락 ↑↓ = 커서 아래 창 스와이프\n$THREE_FINGER_HINT\n$HOLD_HINT"
-            } + if (buttonsShown) "\n$BUTTONS_HINT" else ""
+            text = padHint(buttonsShown)
             setTextColor(Color.argb(180, 255, 255, 255))
             textSize = 12f
             gravity = Gravity.CENTER
@@ -1677,6 +1841,18 @@ class RemoteControllerOverlay(
             true
         }
         return pad
+    }
+
+    /** The touchpad's hint for the current cursor mode and air mouse; with [buttonsShown] the round buttons' line. */
+    private fun padHint(buttonsShown: Boolean): String {
+        val system = actions.systemCursorActive
+        val drag = if (appPrefs.remoteTapDrag) TAP_DRAG_HINT else HOLD_DRAG_HINT
+        return when {
+            prefs.airMouse -> "공중 마우스 · 폰을 겨누세요\n탭 = 클릭 · 길게 = 드래그" +
+                (if (system) "\n$SYSTEM_TWO_FINGER_HINT" else "") + "\n$THREE_FINGER_HINT\n$AIR_HOLD_HINT"
+            system -> "DeX 커서 TOUCHPAD\n$drag\n$SYSTEM_TWO_FINGER_HINT\n$THREE_FINGER_HINT\n$HOLD_HINT"
+            else -> "DeX TOUCHPAD\n$drag\n두 손가락 ↑↓ = 커서 아래 창 스와이프\n$THREE_FINGER_HINT\n$HOLD_HINT"
+        } + if (buttonsShown) "\n$BUTTONS_HINT" else ""
     }
 
     /** Hands one window touch event of the touchpad to [touchRouter], per contact, at its event time. */
@@ -1797,6 +1973,9 @@ class RemoteControllerOverlay(
         menuPopup = null
         moreButtonFace = null
         menuTouch = false
+        airButtonView = null
+        airDotView = null
+        homeButtonView = null
         mainHandler.removeCallbacks(padTick)
         padMachine.reset(SystemClock.uptimeMillis())
         touchRouter.reset()
@@ -1826,13 +2005,6 @@ class RemoteControllerOverlay(
     private fun rounded(color: Int, radiusDp: Float) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radiusDp.toInt()).toFloat()
-    }
-
-    private fun cornerLabel(corner: RemoteDockPrefs.Corner): String = when (corner) {
-        RemoteDockPrefs.Corner.TOP_LEFT -> "좌상"
-        RemoteDockPrefs.Corner.TOP_RIGHT -> "우상"
-        RemoteDockPrefs.Corner.BOTTOM_LEFT -> "좌하"
-        RemoteDockPrefs.Corner.BOTTOM_RIGHT -> "우하"
     }
 
     private fun cornerGravity(corner: RemoteDockPrefs.Corner): Int = when (corner) {
@@ -1869,9 +2041,6 @@ class RemoteControllerOverlay(
         const val EDGE_GAP_MIN_DP = 12
         const val EDGE_GAP_MAX_DP = 20
 
-        /** The touchpad's enlarge switch, at the right end of its top row. */
-        const val ENLARGE_CHIP_WIDTH_DP = 44
-
         /** The pad's close (collapse) button, red so it stands out (user 2026-11-19). */
         val CLOSE_RED = Color.rgb(198, 40, 40)
 
@@ -1892,7 +2061,7 @@ class RemoteControllerOverlay(
 
         /**
          * Least landscape touchpad width while the settings column narrows it, so the touchpad's top
-         * row (⋯, the rotate chip, −, the enlarge switch: 230 dp) still fits; below it the settings
+         * row (⋯, the rotate chip, the enlarge button, ✕: 220 dp) still fits; below it the settings
          * column narrows instead ([landscapeWidthsDp]).
          */
         const val LANDSCAPE_PAD_MIN_WIDTH_DP = 240

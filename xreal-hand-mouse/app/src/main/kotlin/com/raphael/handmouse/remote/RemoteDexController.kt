@@ -1015,8 +1015,11 @@ class RemoteDexController(
      * Clicks the input field focused on the DeX display (the active window's first) so its app shows
      * the IME, after letting the soft keyboard show next to a hardware keyboard
      * ([AccessibilityService.SHOW_MODE_IGNORE_HARD_KEYBOARD]). A field that takes no click is
-     * reached through its nearest clickable ancestor. Without a focused editable field a toast asks
-     * to click one first.
+     * reached through its nearest clickable ancestor. Without a focused editable field, an editable
+     * field of the DeX window under the cursor is focused and clicked instead ([inputUnderCursor];
+     * user 2026-11-19: the toast alone left the user to aim at the field first). Only when there is
+     * none either, a toast asks to click one, on the phone and on the DeX display, where the user
+     * is looking.
      */
     override fun showKeyboard() {
         val s = selectionProvider()
@@ -1026,13 +1029,71 @@ class RemoteDexController(
         }
         val modeNote = allowSoftKeyboard()
         val input = focusedInput(s.displayId)
-        if (input == null) {
-            logAction("keyboard: no focused input field on display ${s.displayId} ($modeNote)")
-            Toast.makeText(service, "먼저 입력창을 클릭하세요", Toast.LENGTH_SHORT).show()
+        if (input != null) {
+            val clicked = clickForIme(input)
+            logAction("keyboard: focused ${input.className} window=${input.windowId} clicked=$clicked display=${s.displayId} ($modeNote)")
             return
         }
-        val clicked = clickForIme(input)
-        logAction("keyboard: ${input.className} window=${input.windowId} clicked=$clicked display=${s.displayId} ($modeNote)")
+        val point = if (useSystemCursor()) systemCursor.position(s.displayId, SYSTEM_CURSOR_MAX_AGE_MS) else cursor.cursorPosition
+        val found = inputUnderCursor(s.displayId, point)
+        if (found != null) {
+            val (field, how) = found
+            val focused = field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            val clicked = clickForIme(field)
+            logAction(
+                "keyboard: no focused field; $how ${field.className} window=${field.windowId} at $point " +
+                    "focused=$focused clicked=$clicked display=${s.displayId} ($modeNote)",
+            )
+            return
+        }
+        logAction("keyboard: no focused field and no editable field in the window under $point on display ${s.displayId} ($modeNote); toast")
+        val hint = "먼저 입력창을 클릭하세요"
+        Toast.makeText(service, hint, Toast.LENGTH_SHORT).show()
+        // A toast made from a context of the DeX display shows there (text toasts carry their display).
+        service.getSystemService(DisplayManager::class.java)?.getDisplay(s.displayId)?.let { display ->
+            runCatching { Toast.makeText(service.createDisplayContext(display), hint, Toast.LENGTH_SHORT).show() }
+                .onFailure { android.util.Log.w(logTag, "keyboard: DeX toast failed", it) }
+        }
+    }
+
+    /**
+     * An editable, visible field in the DeX application window under [point] (the topmost window
+     * containing it; the active window without a point or a window there): the one whose bounds
+     * contain [point], else the first in the window's tree order. Paired with how it was picked, for
+     * the log. Null when that window has none.
+     */
+    private fun inputUnderCursor(displayId: Int, point: Pair<Float, Float>?): Pair<AccessibilityNodeInfo, String>? {
+        val windows = try {
+            service.windowsOnAllDisplays.get(displayId).orEmpty()
+        } catch (e: Exception) {
+            android.util.Log.w(logTag, "windowsOnAllDisplays failed: ${e.message}")
+            emptyList()
+        }
+        val apps = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        val bounds = android.graphics.Rect()
+        val window = point?.let { (x, y) ->
+            apps.filter { w ->
+                w.getBoundsInScreen(bounds)
+                bounds.contains(x.toInt(), y.toInt())
+            }.maxByOrNull { it.layer }
+        } ?: apps.firstOrNull { it.isActive } ?: return null
+        val root = window.root ?: return null
+        val editable = ArrayList<AccessibilityNodeInfo>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        var visited = 0
+        while (queue.isNotEmpty() && visited < IME_SEARCH_MAX_NODES) {
+            val node = queue.removeFirst()
+            visited++
+            if (node.isEditable && node.isVisibleToUser && node.isEnabled) editable += node
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
+        }
+        if (point != null) {
+            editable.firstOrNull { node ->
+                node.getBoundsInScreen(bounds)
+                bounds.contains(point.first.toInt(), point.second.toInt())
+            }?.let { return it to "field under the cursor" }
+        }
+        return editable.firstOrNull()?.let { it to "first field of the window" }
     }
 
     /**
@@ -1465,6 +1526,9 @@ class RemoteDexController(
 
         /** Ancestors of a focused field that [showKeyboard] tries when the field takes no click. */
         const val IME_CLICK_MAX_ANCESTORS = 3
+
+        /** Most nodes [inputUnderCursor] walks in one window (a long list stays cheap). */
+        const val IME_SEARCH_MAX_NODES = 2_000
 
         /** Least time between two diagnostic lines of one kind. */
         const val DIAG_LOG_INTERVAL_MS = 1_000L

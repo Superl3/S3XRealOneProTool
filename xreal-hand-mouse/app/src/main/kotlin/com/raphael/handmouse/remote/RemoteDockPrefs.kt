@@ -89,6 +89,29 @@ class RemoteDockPrefs(context: Context) {
         edit.apply()
     }
 
+    /**
+     * Where the collapsed (mini) button was dragged to: its centre as fractions of display 0 in its
+     * natural orientation ([MiniButtonMath]), or null while it was never dragged (it then sits at
+     * [corner]).
+     */
+    val miniPosition: Pair<Float, Float>?
+        get() {
+            if (!raw.contains(KEY_MINI_X) || !raw.contains(KEY_MINI_Y)) return null
+            return raw.getFloat(KEY_MINI_X, 0f).coerceIn(0f, 1f) to raw.getFloat(KEY_MINI_Y, 0f).coerceIn(0f, 1f)
+        }
+
+    /**
+     * Saves the mini button's position and the [corner] the expanded panel opens at, chosen from it,
+     * in one write (one change for the panel to follow).
+     */
+    fun setMiniPosition(fx: Float, fy: Float, corner: Corner) {
+        raw.edit()
+            .putFloat(KEY_MINI_X, fx.coerceIn(0f, 1f))
+            .putFloat(KEY_MINI_Y, fy.coerceIn(0f, 1f))
+            .putString(KEY_CORNER, corner.name)
+            .apply()
+    }
+
     fun cycleCorner(): Corner {
         val next = when (corner) {
             Corner.TOP_LEFT -> Corner.TOP_RIGHT
@@ -141,10 +164,13 @@ class RemoteDockPrefs(context: Context) {
         private const val KEY_CORNER = "corner"
         /** The old speed setting: an int index into [OLD_POINTER_SPEEDS]; migrated away on first use. */
         private const val KEY_POINTER_SPEED = "pointer_speed"
-        private const val KEY_TOUCHPAD_SPEED = "touchpad_speed"
-        private const val KEY_AIR_SENSITIVITY = "air_sensitivity"
+        /** The settings that the panel shows as they are set (sliders, the air mouse switch): no re-render for them. */
+        const val KEY_TOUCHPAD_SPEED = "touchpad_speed"
+        const val KEY_AIR_SENSITIVITY = "air_sensitivity"
         private const val KEY_HEAD_COMPENSATION = "head_compensation"
-        private const val KEY_AIR_MOUSE = "air_mouse"
+        const val KEY_AIR_MOUSE = "air_mouse"
+        private const val KEY_MINI_X = "mini_x"
+        private const val KEY_MINI_Y = "mini_y"
         private const val KEY_SYSTEM_CURSOR = "system_cursor"
 
         /** Set once [migrateSystemCursorOff] has run. */
