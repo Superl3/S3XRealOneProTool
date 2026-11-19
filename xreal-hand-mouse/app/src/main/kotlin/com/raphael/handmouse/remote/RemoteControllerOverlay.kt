@@ -846,21 +846,23 @@ class RemoteControllerOverlay(
                 requestRender()
             }
         }
+        // Right end: the red close (collapse) button, then the enlarge switch left of it (user
+        // 2026-11-19). Without the floating buttons the switch takes the right end.
+        val closeDp = if (showButtons) PAD_BUTTON_DP + margin else 0
         addView(enlarge, FrameLayout.LayoutParams(dp(ENLARGE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), top).apply {
             topMargin = dp(margin)
-            marginEnd = dp(margin)
+            marginEnd = dp(margin + closeDp)
         })
         overlays += enlarge
         // What lies left of the enlarge switch, from the right edge.
-        var endDp = margin + ENLARGE_CHIP_WIDTH_DP + margin
+        var endDp = margin + closeDp + ENLARGE_CHIP_WIDTH_DP + margin
         if (showButtons) {
             val collapse = collapseButton()
             addView(collapse, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), top).apply {
                 topMargin = dp(margin)
-                marginEnd = dp(endDp)
+                marginEnd = dp(margin)
             })
             overlays += collapse
-            endDp += PAD_BUTTON_DP + margin
             val more = moreButton()
             addView(more, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), Gravity.TOP or Gravity.START).apply {
                 topMargin = dp(margin)
@@ -963,9 +965,13 @@ class RemoteControllerOverlay(
 
     /** Collapses the panel to the floating button. */
     private fun collapseButton(): View =
-        padButton("−", "DeX Remote 접기 (플로팅 버튼으로)").also { b ->
+        padButton("✕", "DeX Remote 닫기 (플로팅 버튼으로 접기)").also { b ->
+            b.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(CLOSE_RED)
+            }
             // Through the deferral: this finger, or a second one holding a drag, keeps the window until it lifts.
-            actOnPress(b, "− (collapse)") {
+            actOnPress(b, "✕ (collapse)") {
                 expanded = false
                 requestRender()
             }
@@ -1144,7 +1150,7 @@ class RemoteControllerOverlay(
 
     /** Tap: back. Long press: close the window under the cursor ([RemoteActions.closeActive]). */
     private fun backButton(): View =
-        holdButton("↩ 뒤로", "DeX 뒤로 (세 손가락 탭과 같음), 길게 누르면 커서 아래 창 닫기", { actions.back() }) {
+        holdButton("↩", "DeX 뒤로 (세 손가락 탭과 같음), 길게 누르면 커서 아래 창 닫기", { actions.back() }) {
             actions.closeActive()
             true
         }
@@ -1153,7 +1159,7 @@ class RemoteControllerOverlay(
     private fun homeButton(): View {
         val air = prefs.airMouse
         val description = if (air) "DeX 홈, 길게 누르면 커서를 가운데로" else "DeX 홈"
-        return holdButton("⌂ 홈", description, { actions.home() }) {
+        return holdButton("⌂", description, { actions.home() }) {
             // Read when it fires: the air mouse may have been switched since the render.
             if (prefs.airMouse) actions.recenter()
             prefs.airMouse
@@ -1165,7 +1171,7 @@ class RemoteControllerOverlay(
      * 2026-11-19: the toggle already restores, so the two must not differ).
      */
     private fun maximizeWindowButton(): View =
-        holdButton("▣ 최대화", "커서 아래 창 최대화 또는 복원", { actions.toggleMaximize() }) {
+        holdButton("▣", "커서 아래 창 최대화 또는 복원", { actions.toggleMaximize() }) {
             actions.toggleMaximize()
             true
         }
@@ -1173,7 +1179,8 @@ class RemoteControllerOverlay(
     /** A panel button with a tap and a long action ([tapOrHold]); [hold] says whether it acted. */
     private fun holdButton(label: String, description: String, tap: () -> Unit, hold: () -> Boolean): TextView =
         textButton(label).apply {
-            textSize = 14f
+            // Icon only (user 2026-11-19: the bottom buttons need no text).
+            textSize = 22f
             contentDescription = description
             tapOrHold(this, label, tap, hold)
         }
@@ -1865,6 +1872,9 @@ class RemoteControllerOverlay(
         /** The touchpad's enlarge switch, at the right end of its top row. */
         const val ENLARGE_CHIP_WIDTH_DP = 44
 
+        /** The pad's close (collapse) button, red so it stands out (user 2026-11-19). */
+        val CLOSE_RED = Color.rgb(198, 40, 40)
+
         /** Where the touchpad's top row of controls ends: what lies under it (the menu, the hint) starts here. */
         const val PAD_ROW_DP = PAD_BUTTON_MARGIN_DP + PAD_BUTTON_DP + PAD_BUTTON_MARGIN_DP
 
@@ -1932,7 +1942,7 @@ class RemoteControllerOverlay(
 
         const val AIR_HOLD_HINT = "길게: ✈·⌂ 가운데 · ↩ 창 닫기"
 
-        const val BUTTONS_HINT = "⋯ = 공중 마우스·키보드·설정·빠른 앱 · − = 접기"
+        const val BUTTONS_HINT = "⋯ = 공중 마우스·키보드·설정·빠른 앱 · ✕ = 닫기"
 
         /** The dot on the more button while the air mouse is on (its switch is inside the menu). */
         val AIR_DOT_COLOR = Color.argb(255, 30, 136, 229)
