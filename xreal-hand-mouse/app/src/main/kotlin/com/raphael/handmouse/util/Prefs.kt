@@ -191,6 +191,16 @@ class Prefs(context: Context) {
     val manualConnect: Boolean get() = prefs.getBoolean(KEY_CONN_MANUAL, true)
     val keepAlive: Boolean get() = prefs.getBoolean(KEY_KEEP_ALIVE, true)
     val startOnConnect: Boolean get() = prefs.getBoolean(KEY_START_ON_CONNECT, true)
+
+    // ---- Audio ----
+    /** Keep the sound on earphones / Bluetooth when the glasses are plugged in
+     * ([com.raphael.handmouse.audio.AudioRoutingGuard]; on by default). */
+    val blockUsbAudioWhenExternal: Boolean get() = prefs.getBoolean(KEY_BLOCK_USB_AUDIO, true)
+
+    // ---- DeX Remote ----
+    /** Laptop-style tap-drag on the Remote touchpad ([com.raphael.handmouse.remote.PadGestureMachine];
+     * on by default). Read on every touch, so a change applies at once. */
+    val remoteTapDrag: Boolean get() = prefs.getBoolean(KEY_REMOTE_TAP_DRAG, true)
 }
 
 // Button assignments (Eye Tools fork): Android key codes captured by "learn" mode; 0 = none.
@@ -240,6 +250,10 @@ const val KEY_DIM_AUTO = "dim_auto"
 const val KEY_DIM_MAX = "dim_max"
 const val KEY_DIM_START_LUX = "dim_start_lux"
 const val KEY_START_ON_CONNECT = "bg_start_on_connect"
+/** Not "hm_": the accessibility service re-applies the hand settings on every "hm_" change. */
+const val KEY_BLOCK_USB_AUDIO = "audio_block_usb_when_external"
+/** Not "hm_" either: it is read by the Remote touchpad, not the hand pipeline. */
+const val KEY_REMOTE_TAP_DRAG = "remote_tap_drag"
 
 const val KEY_LAYER_STEP = "hm_layer_step"
 const val REC_STREAM_HEVC_1080 = "hevc_1080"

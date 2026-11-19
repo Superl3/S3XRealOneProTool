@@ -108,6 +108,16 @@ class RelativeCursorMapper(
      * da mão (gesto de punho fechado 2s — ver [FistDetector]/[CursorPipeline]). É o "reset" da
      * correspondência mão↔tela que o modo relativo perde aos poucos (clamps de borda e
      * re-ancoragens deslocam o centro com o tempo). */
+    /** Another input (the Remote touchpad) moved the cursor: continue from there, re-anchoring
+     * on the next sample instead of jumping back to where the hand had left it. */
+    fun placeCursor(x: Float, y: Float) {
+        cursorX = x
+        cursorY = y
+        anchorNx = null
+        anchorNy = null
+        speedEma = Float.NaN
+    }
+
     fun recenter() {
         cursorX = null
         cursorY = null

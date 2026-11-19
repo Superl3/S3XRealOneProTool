@@ -303,4 +303,20 @@
             android:title="@string/pref_start_on_connect"
             android:summary="@string/pref_start_on_connect_sum" />
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_remote">
+        <SwitchPreferenceCompat
+            android:key="remote_tap_drag"
+            android:defaultValue="true"
+            android:title="@string/pref_remote_tap_drag"
+            android:summary="@string/pref_remote_tap_drag_sum" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_audio">
+        <SwitchPreferenceCompat
+            android:key="audio_block_usb_when_external"
+            android:defaultValue="true"
+            android:title="@string/pref_block_usb_audio"
+            android:summary="@string/pref_block_usb_audio_sum" />
+    </PreferenceCategory>
 </PreferenceScreen>

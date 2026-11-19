@@ -149,6 +149,9 @@ class CursorPipeline(
          * does not turn a press into a drag. */
         private const val FIST_TOUCH_SLOP_PX = 28f
 
+        /** How long after the last Remote touchpad event the hand stays off the cursor. */
+        private const val REMOTE_YIELD_MS = 1_000L
+
         /** A "not ready" hint stays up this long after it blocked a pinch or fist. */
         private const val NOT_READY_HINT_MS = 800L
 
@@ -240,6 +243,8 @@ class CursorPipeline(
     // and holds the touch until the fist opens. [handX]/[handY]: live cursor where the drag is
     // measured from (re-based when the slop is crossed, so the press point does not jump).
     private class FistTouch(val anchorX: Float, val anchorY: Float, var handX: Float, var handY: Float) {
+        /** [GestureInjector.beginDrag] token of this touch's chain. */
+        var token = -1
         var dragging = false
         var x = anchorX
         var y = anchorY
@@ -284,12 +289,37 @@ class CursorPipeline(
         injectionSuppressed = suppressed
     }
 
+    /** [GestureInjector.beginDrag] token of the pinch drag (see [dispatchActions]). */
+    private var pinchDragToken = -1
+
+    /** Uptime until which the Remote touchpad owns the cursor (set from the main thread). */
+    @Volatile
+    private var remoteOwnsCursorUntilMs = 0L
+
+    /** The Remote touchpad was used: the hand stops moving the cursor and injecting until
+     * [REMOTE_YIELD_MS] after the last touch, then resumes from where the Remote left it.
+     * [holding] = a Remote drag is held: the hand stays off until a later call releases it. */
+    fun yieldCursorToRemote(holding: Boolean) {
+        remoteOwnsCursorUntilMs =
+            if (holding) Long.MAX_VALUE else android.os.SystemClock.uptimeMillis() + REMOTE_YIELD_MS
+    }
+
     override fun onFrameConverted(bitmap: Bitmap, conversionMs: Double) {
         // Não usado pelo pipeline de cursor — só o HUD de debug da Activity precisa do bitmap.
     }
 
     override fun onHandResult(result: HandTracker.Result) {
         val currentBounds = bounds ?: return // sem display do DeX -> nada a mover/injetar
+        // A held fist touch must not outlive injection being suppressed (calibration wizard).
+        if (injectionSuppressed) releaseFistTouch()
+
+        // Remote touchpad in use: it owns the cursor and the injector. End this pipeline's own
+        // touch/drag (a chain the Remote already replaced is ignored by its token) and keep the
+        // relative mapper on the Remote's cursor so the hand resumes from there.
+        if (android.os.SystemClock.uptimeMillis() < remoteOwnsCursorUntilMs) {
+            yieldFrame()
+            return
+        }
 
         // Isotropic landmarks: every distance/ratio below is direction-independent (see
         // [HandTracker.Result.isoPoints]).
@@ -317,6 +347,7 @@ class CursorPipeline(
         // tudo — ver [toggleCursorMuted]).
         if (settings.thumbsUpMute) updateThumbsUpState(features, t)
         if (cursorMuted) {
+            releaseFistTouch()
             overlay.setFistProgress(0f)
             clearFistPlan()
             showHint(null)
@@ -333,6 +364,7 @@ class CursorPipeline(
             relativeMapper.onHandLost()
             palmReference.reset()
             pinchDetector.reset()
+            releaseFistTouch()
             overlay.setPinched(false)
             overlay.setFistProgress(0f)
             clearFistPlan()
@@ -345,6 +377,7 @@ class CursorPipeline(
         // A stationary long pinch opens the menu. While it is open, only the displacement from
         // its opening position matters; the normal cursor mapping is paused.
         if (layeredMenu.isActive) {
+            releaseFistTouch()
             val event = pinchDetector.update(pinchPoints, t)
             if (event == PinchEvent.UP && menuAwaitRelease) {
                 menuAwaitRelease = false
@@ -656,14 +689,15 @@ class CursorPipeline(
         clearFistPlan()
         val target = plan.target ?: return // dropped by the speed check
         val (hx, hy) = lastLivePosition
-        fistTouch = FistTouch(target.x, target.y, hx, hy)
+        val touch = FistTouch(target.x, target.y, hx, hy)
+        fistTouch = touch
         dragXFilter.reset()
         dragYFilter.reset()
         dragXFilter.filter(target.x, timestampMs)
         dragYFilter.filter(target.y, timestampMs)
         filteredDragPosition = target.x to target.y
         Log.d(TAG, "Fist touch down (${target.x}, ${target.y}) display=${display.displayId}")
-        gestureInjector.beginDrag(target.x, target.y, display.displayId)
+        touch.token = gestureInjector.beginDrag(target.x, target.y, display.displayId)
         overlay.pulseClickAt(target.x, target.y)
     }
 
@@ -691,7 +725,7 @@ class CursorPipeline(
         val x = dragXFilter.filter(touch.x, timestampMs)
         val y = dragYFilter.filter(touch.y, timestampMs)
         filteredDragPosition = x to y
-        gestureInjector.updateDrag(x, y)
+        gestureInjector.updateDrag(x, y, touch.token)
     }
 
     /** Ends a held fist touch at its unfiltered position (the pinned point when it never moved). */
@@ -699,7 +733,7 @@ class CursorPipeline(
         val touch = fistTouch ?: return
         fistTouch = null
         Log.d(TAG, "Fist touch up (${touch.x}, ${touch.y}) dragged=${touch.dragging}")
-        gestureInjector.endDrag(touch.x, touch.y)
+        gestureInjector.endDrag(touch.x, touch.y, touch.token)
         dragXFilter.reset()
         dragYFilter.reset()
         filteredDragPosition = null
@@ -778,6 +812,31 @@ class CursorPipeline(
      * "Congelamento VISUAL do cursor — REMOVIDO" no Javadoc da classe (histórico completo do
      * vai-e-vem dessa decisão). A âncora do pinch-down continua valendo pra INJEÇÃO do
      * clique/drag ([clickDragStateMachine]) — só a renderização deixou de congelar. */
+    private fun yieldFrame() {
+        if (clickDragStateMachine.phase == ClickDragStateMachine.Phase.DRAGGING) {
+            val (x, y) = lastLivePosition
+            gestureInjector.endDrag(x, y, pinchDragToken)
+        }
+        releaseFistTouch()
+        clickDragStateMachine.reset()
+        pinchDetector.reset()
+        closeMenuIfOpen()
+        clearFistPlan()
+        overlay.setPinched(false)
+        overlay.setFistProgress(0f)
+        dragXFilter.reset()
+        dragYFilter.reset()
+        filteredDragPosition = null
+        palmReference.reset()
+        oneEuroX.reset()
+        oneEuroY.reset()
+        deadZone.reset()
+        positionHistory.reset()
+        val p = overlay.cursorPosition
+        if (p != null) relativeMapper.placeCursor(p.first, p.second) else relativeMapper.onHandLost()
+        showHint(null)
+    }
+
     private fun renderCursor(fx: Float, fy: Float) {
         val emitted = deadZone.filter(fx, fy) ?: return
         overlay.moveTo(emitted.first, emitted.second)
@@ -809,7 +868,7 @@ class CursorPipeline(
         if (clickDragStateMachine.phase == ClickDragStateMachine.Phase.DRAGGING) {
             val (x, y) = lastLivePosition
             Log.w(TAG, "onHandLost durante DRAGGING — encerrando drag em ($x, $y)")
-            gestureInjector.endDrag(x, y)
+            gestureInjector.endDrag(x, y, pinchDragToken)
         }
         releaseFistTouch() // same for a held fist touch
         notReadyBlockedAtMs = null
@@ -874,19 +933,17 @@ class CursorPipeline(
                     dragXFilter.filter(action.x, timestampMs)
                     dragYFilter.filter(action.y, timestampMs)
                     filteredDragPosition = action.x to action.y
-                    gestureInjector.beginDrag(action.x, action.y, display.displayId)
+                    pinchDragToken = gestureInjector.beginDrag(action.x, action.y, display.displayId)
                 }
                 is ClickDragStateMachine.Action.DragMove -> {
                     val x = dragXFilter.filter(action.x, timestampMs)
                     val y = dragYFilter.filter(action.y, timestampMs)
                     filteredDragPosition = x to y
-                    gestureInjector.updateDrag(
-                        x, y,
-                    )
+                    gestureInjector.updateDrag(x, y, pinchDragToken)
                 }
                 is ClickDragStateMachine.Action.DragEnd -> {
                     // Finish at the real hand position so smoothing does not leave a drop short.
-                    gestureInjector.endDrag(action.x, action.y)
+                    gestureInjector.endDrag(action.x, action.y, pinchDragToken)
                     dragXFilter.reset()
                     dragYFilter.reset()
                     filteredDragPosition = null

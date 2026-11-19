@@ -240,8 +240,10 @@ class GestureInjector(private val service: AccessibilityService) {
 
     /** Inicia um drag: primeira stroke com `willContinue=true`, com um SEGMENTO REAL (moveTo →
      * lineTo) pra não degenerar (ver Javadoc da classe). Substitui qualquer drag em andamento
-     * (a geração nova invalida os callbacks da cadeia antiga). */
-    fun beginDrag(x: Float, y: Float, displayId: Int) = synchronized(lock) {
+     * (a geração nova invalida os callbacks da cadeia antiga). Returns the chain's token: the
+     * hand pipeline and the Remote touchpad share this injector, so [updateDrag]/[endDrag] take
+     * the token and ignore a chain that another caller has since replaced. */
+    fun beginDrag(x: Float, y: Float, displayId: Int): Int = synchronized(lock) {
         if (currentDragStroke != null) {
             Log.w(TAG, "beginDrag com drag já ativo — substituindo a cadeia anterior")
         }
@@ -259,16 +261,27 @@ class GestureInjector(private val service: AccessibilityService) {
         pendingEnd = null
         Log.d(TAG, "beginDrag em ($x, $y) display=$displayId")
         dispatchDragStroke(stroke, displayId, "beginDrag", willContinue = true, generation = dragGeneration)
+        dragGeneration
+    }
+
+    /** Whether [token] still names the live chain (another [beginDrag] replaces it). Under [lock]. */
+    private fun ownsChain(token: Int, op: String): Boolean {
+        if (currentDragStroke == null) {
+            Log.w(TAG, "$op sem beginDrag ativo — ignorado")
+            return false
+        }
+        if (token != dragGeneration) {
+            Log.w(TAG, "$op de uma cadeia substituída (token=$token atual=$dragGeneration) — ignorado")
+            return false
+        }
+        return true
     }
 
     /** Segue a mão. Com stroke em voo, só coalesce em [pendingTarget] (a posição mais recente
      * vence — quem despacha é o `onCompleted`); sem stroke em voo, despacha imediatamente. Sem
      * efeito (loga e ignora) se não há [beginDrag] ativo. */
-    fun updateDrag(x: Float, y: Float) = synchronized(lock) {
-        if (currentDragStroke == null) {
-            Log.w(TAG, "updateDrag($x, $y) sem beginDrag ativo — ignorado")
-            return
-        }
+    fun updateDrag(x: Float, y: Float, token: Int) = synchronized(lock) {
+        if (!ownsChain(token, "updateDrag($x, $y)")) return
         if (pendingEnd != null) return // já soltando — posição nova não importa mais
         if (strokeInFlight) {
             pendingTarget = x to y
@@ -280,11 +293,8 @@ class GestureInjector(private val service: AccessibilityService) {
     /** Finaliza o drag. Com stroke em voo, agenda a stroke final pro próximo `onCompleted`
      * (no máximo ~1 segmento de atraso); sem stroke em voo, despacha já. Sem efeito (loga e
      * ignora) se não há [beginDrag] ativo. */
-    fun endDrag(x: Float, y: Float) = synchronized(lock) {
-        if (currentDragStroke == null) {
-            Log.w(TAG, "endDrag($x, $y) sem beginDrag ativo — ignorado")
-            return
-        }
+    fun endDrag(x: Float, y: Float, token: Int) = synchronized(lock) {
+        if (!ownsChain(token, "endDrag($x, $y)")) return
         Log.d(TAG, "endDrag pedido em ($x, $y) display=$dragDisplayId (inFlight=$strokeInFlight)")
         pendingTarget = null
         if (strokeInFlight) {

@@ -67,7 +67,7 @@ class DatasetRecorder private constructor(private val dir: File, val label: Stri
         else bitmap.copy(Bitmap.Config.ARGB_8888, false)
         val name = String.format(Locale.US, "%s_%s_%05d.jpg", label, session, index++)
         pending.incrementAndGet()
-        handler.post {
+        val posted = handler.post {
             try {
                 File(dir, name).outputStream().use { copy.compress(Bitmap.CompressFormat.JPEG, 90, it) }
                 saved++
@@ -78,6 +78,10 @@ class DatasetRecorder private constructor(private val dir: File, val label: Stri
                 copy.recycle()
                 pending.decrementAndGet()
             }
+        }
+        if (!posted) { // close() quit the thread after the `closed` check above
+            copy.recycle()
+            pending.decrementAndGet()
         }
     }
 

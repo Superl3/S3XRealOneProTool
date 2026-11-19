@@ -15,11 +15,13 @@ import android.os.Looper
 import android.util.Log
 import android.view.Display
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.raphael.handmouse.MainActivity
 import com.raphael.handmouse.R
+import com.raphael.handmouse.audio.AudioRoutingGuard
 import com.raphael.handmouse.input.AppLauncher
 import com.raphael.handmouse.input.AccessibleTargetFinder
 import com.raphael.handmouse.input.GestureInjector
@@ -34,6 +36,8 @@ import com.raphael.handmouse.tracking.DisplayBounds
 import com.raphael.handmouse.tracking.MenuAction
 import com.raphael.handmouse.input.WindowController
 import com.raphael.handmouse.remote.RemoteDexController
+import com.raphael.handmouse.remote.HoverTargetTracker
+import com.raphael.handmouse.remote.SystemCursorTracker
 import com.raphael.handmouse.util.KEY_BTN_PHOTO
 import com.raphael.handmouse.util.KEY_BTN_RECORD
 import com.raphael.handmouse.util.KEY_BTN_TRACKING
@@ -130,6 +134,16 @@ class HandMouseAccessibilityService : AccessibilityService() {
     private lateinit var prefs: Prefs
     private lateinit var remoteController: RemoteDexController
     private var voiceController: VoiceCommandController? = null
+
+    /** Eye Tools fork: keeps the sound on earphones when the glasses are plugged in (spec J, item 5). */
+    private var audioGuard: AudioRoutingGuard? = null
+
+    /** Eye Tools fork: system (DeX) cursor position from observed mouse events (spec E). The
+     * Remote enables it while it drives the system cursor. */
+    val systemCursor = SystemCursorTracker()
+
+    /** Eye Tools fork: the window the system cursor hovers, for the Remote's window buttons. */
+    val hoverTarget = HoverTargetTracker()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -267,7 +281,11 @@ class HandMouseAccessibilityService : AccessibilityService() {
             service = this,
             cursor = overlay,
             gestures = gestureInjector,
+            windowController = windowController,
             selectionProvider = { lastSelection },
+            systemCursor = systemCursor,
+            hoverTarget = hoverTarget,
+            onPointerInput = { holding -> cursorPipeline.yieldCursorToRemote(holding) },
         )
         // Eye Tools fork: palm-menu actions.
         cursorPipeline.menuActionHandler = CursorPipeline.MenuActionHandler { action, x, y, display ->
@@ -288,6 +306,8 @@ class HandMouseAccessibilityService : AccessibilityService() {
         instance = this
         displayMonitor.start() // dispara refresh() -> onDexDisplayChanged síncrono, se já houver display
         mainHandler.post(watchdogRunnable)
+        audioGuard?.stop() // rebind: the guard of a previous connection
+        audioGuard = AudioRoutingGuard(this).also { it.start() }
 
         // Handshake com o EyeCaptureService (ver Javadoc dele) — se o FGS de captura já
         // estiver rodando (a11y habilitada depois de já estar capturando), registra já.
@@ -301,17 +321,31 @@ class HandMouseAccessibilityService : AccessibilityService() {
         if (::prefs.isInitialized) prefs.raw.unregisterOnSharedPreferenceChangeListener(settingsListener)
         EyeCaptureService.getInstance()?.removeTrackingListener(cursorPipeline)
         if (::remoteController.isInitialized) remoteController.destroy()
+        // The Remote disables it when it stops; this covers a destroy before it was built.
+        if (systemCursor.isEnabled) systemCursor.disable(this)
         if (::displayMonitor.isInitialized) displayMonitor.stop()
         if (::overlay.isInitialized) overlay.hide()
         voiceController?.shutdown()
         voiceController = null
         autoDimmer?.stop()
         autoDimmer = null
+        audioGuard?.stop()
+        audioGuard = null
         instance = null
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Não usado nesta tarefa — nenhuma leitura de conteúdo de tela é necessária pro cursor.
+        // Eye Tools fork: only hover events arrive here, and only while the Remote's system
+        // cursor mode enables them (window buttons aim at the hovered window).
+        if (event != null) hoverTarget.onAccessibilityEvent(event)
+    }
+
+    /** Eye Tools fork: only arrives for the motion event sources [systemCursor] enables. The
+     * Remote checks each one for its display-mismatch fallback. */
+    override fun onMotionEvent(event: MotionEvent) {
+        super.onMotionEvent(event)
+        systemCursor.onMotionEvent(event)
+        if (::remoteController.isInitialized) remoteController.onMouseEventObserved()
     }
 
     /**

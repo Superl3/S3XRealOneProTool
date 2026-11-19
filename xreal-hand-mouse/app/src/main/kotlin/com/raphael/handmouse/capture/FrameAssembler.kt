@@ -64,7 +64,7 @@ class FrameAssembler(
             // Continuation of the payload started by an earlier read: raw data, no header.
             appendCapped(buffer, 0, length)
             payloadBytes += length
-            return if (continues(length)) emptyList() else endPayload()
+            return if (continues(buffer, length)) emptyList() else endPayload()
         }
 
         val completed = mutableListOf<ByteArray>()
@@ -88,7 +88,7 @@ class FrameAssembler(
 
             payloadBytes = length.toLong()
             payloadEof = eof
-            if (continues(length)) {
+            if (continues(buffer, length)) {
                 inPayload = true // EOF applies when this payload ends (endPayload)
             } else if (eof && frameAccum.size() > 0) {
                 completed += takeFrame()
@@ -111,8 +111,35 @@ class FrameAssembler(
         return if (payloadEof && frameAccum.size() > 0) listOf(takeFrame()) else emptyList()
     }
 
-    private fun continues(length: Int): Boolean =
-        length == readSize && (maxPayloadSize <= 0 || payloadBytes < maxPayloadSize)
+    /**
+     * Ends the current payload after an empty read or a timeout. Unlike a short read, the payload
+     * may have been cut off mid-transfer, so an MJPEG frame that does not end with EOI (FF D9) is
+     * dropped instead of being delivered truncated. Non-JPEG frames keep [endPayload]'s behaviour.
+     */
+    fun interruptPayload(): List<ByteArray> {
+        if (!inPayload) return emptyList()
+        inPayload = false
+        if (!payloadEof || frameAccum.size() == 0) return emptyList()
+        val frame = takeFrame()
+        return if (isTruncatedJpeg(frame)) emptyList() else listOf(frame)
+    }
+
+    /**
+     * A full read continues the payload, unless it already carries the end of an EOF-flagged
+     * MJPEG frame: a payload whose size is an exact multiple of [readSize] would otherwise make
+     * the next payload's header be appended as JPEG data, merging two frames.
+     */
+    private fun continues(buffer: ByteArray, length: Int): Boolean =
+        length == readSize &&
+            (maxPayloadSize <= 0 || payloadBytes < maxPayloadSize) &&
+            !(payloadEof && endsWithJpegEoi(buffer, length))
+
+    private fun endsWithJpegEoi(buffer: ByteArray, length: Int): Boolean =
+        length >= 2 && buffer[length - 2] == 0xFF.toByte() && buffer[length - 1] == 0xD9.toByte()
+
+    private fun isTruncatedJpeg(frame: ByteArray): Boolean =
+        frame.size >= 2 && frame[0] == 0xFF.toByte() && frame[1] == 0xD8.toByte() &&
+            !endsWithJpegEoi(frame, frame.size)
 
     private fun appendCapped(buffer: ByteArray, offset: Int, len: Int) {
         frameAccum.write(buffer, offset, len)

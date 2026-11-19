@@ -80,4 +80,44 @@ class AmbientAdaptationTest {
         d.update(1500, 0f, 0.1f, false)
         assertFalse(d.covered)
     }
+
+    @Test
+    fun `a sudden fall into darkness holds, then lets go`() {
+        val g = DropGuard(holdMs = 6000, windowMs = 2000, ratio = 10f)
+        assertFalse(g.update(0, 300f))
+        assertTrue(g.update(500, 2f))      // pocket: 300 -> 2 lux
+        assertTrue(g.update(5000, 1f))
+        assertFalse(g.update(7000, 1f))    // a dark room still dims, later
+    }
+
+    @Test
+    fun `light coming back releases the hold at once`() {
+        val g = DropGuard()
+        g.update(0, 300f)
+        assertTrue(g.update(250, 1f))
+        assertFalse(g.update(500, 200f))
+    }
+
+    @Test
+    fun `a slow dusk is not held`() {
+        val g = DropGuard(windowMs = 2000)
+        var lux = 60f
+        var t = 0L
+        while (lux > 2f) {
+            assertFalse(g.update(t, lux))
+            lux *= 0.9f
+            t += 1000
+        }
+    }
+
+    @Test
+    fun `restore puts the adaptation level back`() {
+        val a = LightAdaptation()
+        a.step(300f, 0)
+        val before = a.level
+        a.step(1f, 3000)
+        a.restore(before)
+        assertEquals(before, a.level, 1e-6f)
+    }
 }
+

@@ -293,4 +293,15 @@
     <string name="enhance_stop_cancelled">중지됨</string>
     <string name="enhance_stop_timeout">Android 백그라운드 시간 제한으로 중지됨</string>
     <string name="enhance_stop_recording">녹화가 시작되어 중지됨</string>
+
+    <!-- 오디오 경로 보호 (2026-11-18) -->
+    <string name="pref_cat_audio">오디오</string>
+    <string name="pref_block_usb_audio">이어폰 연결 중 안경 스피커 자동 전환 막기</string>
+    <string name="pref_block_usb_audio_sum">이어폰·블루투스 기기를 쓰는 중에 안경을 연결해도 소리가 안경으로 넘어가지 않게 합니다 (Shizuku로 한 번 권한 부여). 그동안 연결한 안경은 다시 꽂아야 소리가 납니다. 앱을 삭제하기 전에 이 스위치를 끄세요.</string>
+    <string name="audio_guard_replug_glasses">안경 스피커로 들으려면 안경을 다시 꽂으세요 (이어폰 연결 중이라 안경 소리를 막아 두었습니다)</string>
+
+    <!-- DeX Remote 터치패드 (2026-11-18) -->
+    <string name="pref_cat_remote">DeX Remote</string>
+    <string name="pref_remote_tap_drag">탭 후 다시 대고 밀어 드래그</string>
+    <string name="pref_remote_tap_drag_sum">Remote 터치패드에서 탭한 직후(0.25초 안)에 다시 대고 밀면 노트북 터치패드처럼 닿은 곳부터 드래그합니다. 밀지 않고 떼면 더블 클릭입니다. 길게 누른 뒤 밀기는 이 설정과 관계없이 드래그입니다.</string>
 </resources>

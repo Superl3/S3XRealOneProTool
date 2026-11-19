@@ -125,14 +125,21 @@ class EnhanceService : Service() {
         } else {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         }
+        // startForegroundService() demands startForeground() even when a run is already going;
+        // then keep showing that run's progress instead of resetting it to a blank one.
+        val running = worker != null
         try {
-            startForeground(NOTIF_PROGRESS, progressNotification(Status(running = true)), type)
+            startForeground(NOTIF_PROGRESS, progressNotification(if (running) status else Status(running = true)), type)
         } catch (e: Exception) {
             Log.w(TAG, "startForeground failed: ${e.message}")
             stopSelf()
             return START_NOT_STICKY
         }
-        if (worker != null) return START_NOT_STICKY // one run at a time; the main screen offers Cancel meanwhile
+        if (running) { // one run at a time; the main screen offers Cancel meanwhile
+            val ignored = intent.getStringArrayExtra(EXTRA_NAMES)?.size ?: 0
+            log("Enhancer already running — ignored a new request for $ignored recording(s)")
+            return START_NOT_STICKY
+        }
         val names = intent.getStringArrayExtra(EXTRA_NAMES) ?: emptyArray()
         val storages = intent.getStringArrayExtra(EXTRA_STORAGES) ?: emptyArray()
         val wanted = names.indices.map { storages.getOrNull(it) to names[it] }

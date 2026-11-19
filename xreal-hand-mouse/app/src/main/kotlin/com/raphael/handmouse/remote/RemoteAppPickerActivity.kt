@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -59,6 +60,15 @@ class RemoteAppPickerActivity : Activity() {
                 0,
                 1f,
             ))
+            // targetSdk 35 draws edge to edge: without this the search field sat under the status
+            // bar and camera cutout, where it could not be pressed. The keyboard is kept clear too.
+            setOnApplyWindowInsetsListener { v, insets ->
+                val bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime(),
+                )
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                WindowInsets.CONSUMED
+            }
         }
         setContentView(root)
     }

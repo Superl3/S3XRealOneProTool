@@ -5,12 +5,16 @@ import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
+import java.lang.reflect.Method
 
 private const val TAG = "DexDisplayMonitor"
-private const val CATEGORY_SAMSUNG_DESKTOP = "com.samsung.android.hardware.display.category.DESKTOP"
+
+/** Samsung's display category of the DeX desktop display. */
+internal const val CATEGORY_SAMSUNG_DESKTOP = "com.samsung.android.hardware.display.category.DESKTOP"
 
 /**
  * Descobre e observa o display do DeX — PLANO.md §3.4/§6.4, brief Tarefa 4. Categoria Samsung
@@ -80,9 +84,18 @@ class DexDisplayMonitor(private val context: Context) {
         }
     }
 
+    /** The display id [refresh] last logged as selected (-2: nothing logged yet). */
+    private var loggedSelection = -2
+
     private fun refresh() {
         val categorized = categorize()
-        val selected = DexDisplaySelector.select(categorized)
+        val selected = DexDisplaySelector.select(categorized, Process.myUid())
+        val selectedId = selected?.displayId ?: -1
+        if (selectedId != loggedSelection) {
+            // Once per change: what was chosen among what (spec 2026-11-17 section O, Buddy's display).
+            loggedSelection = selectedId
+            Log.i(TAG, "DeX display ${selected?.displayId ?: "none"} of $categorized")
+        }
         val display = selected?.let { displayManager.getDisplay(it.displayId) }
         currentDexDisplay = display
         listener?.onDexDisplayChanged(display)
@@ -98,11 +111,37 @@ class DexDisplayMonitor(private val context: Context) {
             .map { it.displayId }
             .toSet()
         return displayManager.displays.map { d ->
+            val kind = DisplayKind.fromType(HiddenDisplayApi.type(d))
             CategorizedDisplay(
                 displayId = d.displayId,
                 isDesktop = d.displayId in desktopIds,
                 isPresentation = d.displayId in presentationIds,
+                kind = kind,
+                hasProductInfo = runCatching { d.deviceProductInfo != null }.getOrDefault(false),
+                ownerUid = if (kind == DisplayKind.VIRTUAL) HiddenDisplayApi.ownerUid(d) else null,
             )
         }
     }
+}
+
+/**
+ * The hidden `Display.getType()` and `Display.getOwnerUid()`, looked up once by reflection. Either is
+ * null when the platform's hidden-API policy blocks it; [DexDisplaySelector] then falls back to the
+ * public product info.
+ */
+private object HiddenDisplayApi {
+    private val getType: Method? = lookup("getType")
+    private val getOwnerUid: Method? = lookup("getOwnerUid")
+
+    fun type(display: Display): Int? = call(getType, display)
+
+    fun ownerUid(display: Display): Int? = call(getOwnerUid, display)
+
+    private fun call(method: Method?, display: Display): Int? =
+        method?.let { runCatching { it.invoke(display) as? Int }.getOrNull() }
+
+    private fun lookup(name: String): Method? =
+        runCatching { Display::class.java.getMethod(name) }
+            .onFailure { Log.i(TAG, "Display.$name() not available: $it") }
+            .getOrNull()
 }

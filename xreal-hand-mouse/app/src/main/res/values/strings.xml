@@ -352,4 +352,15 @@
     <string name="enhance_stop_cancelled">stopped</string>
     <string name="enhance_stop_timeout">stopped by Android\'s background time limit</string>
     <string name="enhance_stop_recording">stopped because a recording started</string>
+
+    <!-- Audio routing guard (2026-11-18) -->
+    <string name="pref_cat_audio">Audio</string>
+    <string name="pref_block_usb_audio">Keep the sound off the glasses while earphones are connected</string>
+    <string name="pref_block_usb_audio_sum">While earphones or a Bluetooth device play the sound, plugging in the glasses does not move it to the glasses\' speakers (grants a permission once through Shizuku). Glasses plugged in meanwhile play sound only after a replug. Turn this off before uninstalling the app.</string>
+    <string name="audio_guard_replug_glasses">Plug the glasses in again to hear the sound on them (their audio was held back while earphones were connected)</string>
+
+    <!-- DeX Remote touchpad (2026-11-18) -->
+    <string name="pref_cat_remote">DeX Remote</string>
+    <string name="pref_remote_tap_drag">Tap, then touch and slide to drag</string>
+    <string name="pref_remote_tap_drag_sum">On the Remote touchpad, a touch that lands right after a tap (within 0.25 s) and slides drags from where it landed, like a laptop touchpad. Lifting it without sliding is a double click. Holding still before sliding drags either way.</string>
 </resources>

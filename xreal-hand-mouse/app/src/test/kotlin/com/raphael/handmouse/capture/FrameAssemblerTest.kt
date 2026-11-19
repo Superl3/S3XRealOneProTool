@@ -172,4 +172,41 @@ class FrameAssemblerTest {
         assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), assembler.endPayload().single())
         assertTrue(assembler.endPayload().isEmpty())
     }
+
+    private val ff = 0xFF.toByte()
+    private val soi = 0xD8.toByte()
+    private val eoi = 0xD9.toByte()
+
+    @Test
+    fun `an MJPEG payload ending exactly at a read boundary does not swallow the next header`() {
+        val assembler = FrameAssembler(readSize = 8)
+        // header + SOI + 2 bytes, then a continuation that ends with EOI exactly at 16 bytes
+        val first = byteArrayOf(0x02, 0x02, ff, soi, 1, 2, 3, 4)
+        assertTrue(assembler.offerPayload(first, first.size).isEmpty())
+        val cont = byteArrayOf(5, 6, 7, 8, 9, 10, ff, eoi)
+        val out = assembler.offerPayload(cont, cont.size)
+        assertArrayEquals(byteArrayOf(ff, soi, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ff, eoi), out.single())
+        assertFalse(assembler.inPayload)
+        // the next read is a new payload: its header is parsed, not appended as data
+        val next = byteArrayOf(0x02, 0x03, ff, soi, 42, ff, eoi)
+        assertArrayEquals(byteArrayOf(ff, soi, 42, ff, eoi), assembler.offerPayload(next, next.size).single())
+    }
+
+    @Test
+    fun `an MJPEG payload cut off by a timeout is dropped`() {
+        val assembler = FrameAssembler(readSize = 8)
+        val first = byteArrayOf(0x02, 0x02, ff, soi, 1, 2, 3, 4)
+        assembler.offerPayload(first, first.size)
+        assertTrue(assembler.interruptPayload().isEmpty())
+        assertFalse(assembler.inPayload)
+    }
+
+    @Test
+    fun `a complete payload interrupted by a timeout is still delivered`() {
+        val assembler = FrameAssembler(readSize = 8, maxPayloadSize = 0)
+        // non-JPEG (HEVC) data keeps the old behaviour
+        val first = byteArrayOf(0x02, 0x02, 0, 0, 0, 1, 0x40, 1)
+        assembler.offerPayload(first, first.size)
+        assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x40, 1), assembler.interruptPayload().single())
+    }
 }

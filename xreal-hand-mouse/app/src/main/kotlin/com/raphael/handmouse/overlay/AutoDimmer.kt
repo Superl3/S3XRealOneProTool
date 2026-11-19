@@ -31,6 +31,9 @@ class AutoDimmer(context: Context, private val onDim: (Float) -> Unit) : SensorE
     companion object {
         private const val TAG = "AutoDimmer"
         private const val TICK_MS = 250L
+
+        /** How far back a cover looks for the level from before the light fell. */
+        private const val LEVEL_HISTORY_MS = 10_000L
     }
 
     /** Maximum dim level 0..1 (in the dark). */
@@ -54,6 +57,10 @@ class AutoDimmer(context: Context, private val onDim: (Float) -> Unit) : SensorE
     private val handler = Handler(Looper.getMainLooper())
     private val cover = CoverDetector()
     private val adaptation = LightAdaptation()
+    private val dropGuard = DropGuard()
+
+    /** Recent adapted levels, so a cover can put back the level from before the light fell. */
+    private val levelHistory = ArrayDeque<Pair<Long, Float>>()
 
     private var lux = Float.NaN
     private var near: Boolean? = null
@@ -98,6 +105,8 @@ class AutoDimmer(context: Context, private val onDim: (Float) -> Unit) : SensorE
         faceUp = null
         cover.reset()
         adaptation.reset()
+        dropGuard.reset()
+        levelHistory.clear()
         lastLoggedDim = Float.NaN
         onDim(0f)
     }
@@ -127,8 +136,24 @@ class AutoDimmer(context: Context, private val onDim: (Float) -> Unit) : SensorE
             Log.d(TAG, if (covered) "Sensor covered (pocket / face-down) - holding dim level"
                        else "Sensor uncovered - adapting again")
         }
-        if (covered || cover.pending) return
+        if (covered && !wasCovered) {
+            // The light fell before the cover was decided and the adaptation may have dimmed on
+            // the way in: go back to the brightest level of the last moments.
+            levelHistory.maxOfOrNull { it.second }?.let {
+                if (!adaptation.level.isNaN() && it > adaptation.level) {
+                    Log.d(TAG, "Cover: restoring the level from before the light fell")
+                    adaptation.restore(it)
+                    publish()
+                }
+            }
+        }
+        val dropHold = dropGuard.update(now, lux)
+        if (covered || cover.pending || dropHold) return
         adaptation.step(lux, dt)
+        if (!adaptation.level.isNaN()) {
+            levelHistory.addLast(now to adaptation.level)
+            while (levelHistory.isNotEmpty() && now - levelHistory.first().first > LEVEL_HISTORY_MS) levelHistory.removeFirst()
+        }
         publish()
     }
 

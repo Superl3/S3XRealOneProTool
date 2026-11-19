@@ -185,6 +185,7 @@ class UvcCameraHelper(private val context: Context) {
 
     @Volatile
     var formatPreference = FormatPreference.MJPEG_FIRST
+        private set
 
     /**
      * User camera settings (2026-09-29). The Eye's JPEG quality is fixed (~IJG 30, no UVC control
@@ -206,7 +207,6 @@ class UvcCameraHelper(private val context: Context) {
     @Volatile
     private var rawDescriptorsCache: ByteArray? = null
     private var appliedControls: CameraControls? = null
-        private set
 
     /** Changes the preferred order; takes effect at the next [startStream]. Returns true if it
      * changed (the caller then restarts the stream). Resets the fallback cursor: the new order
@@ -557,7 +557,7 @@ class UvcCameraHelper(private val context: Context) {
 
             if (read <= 0) {
                 // A payload never continues across an empty read or a timeout (2026-09-29).
-                for (frame in assembler.endPayload()) {
+                for (frame in assembler.interruptPayload()) {
                     if (PayloadFormat.detect(frame) != PayloadFormat.UNKNOWN) frameCount++
                     listener?.onFrameReceived(frame)
                 }

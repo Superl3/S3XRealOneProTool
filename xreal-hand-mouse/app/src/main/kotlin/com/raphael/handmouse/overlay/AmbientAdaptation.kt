@@ -86,6 +86,45 @@ class LightAdaptation(
     }
 
     fun reset() { level = Float.NaN }
+
+    /** Puts the level back to an earlier [value] (log10(lux + 1)), e.g. the one before a pocket. */
+    fun restore(value: Float) { level = value }
+}
+
+/**
+ * Holds the dimming still after a sudden fall into darkness (spec section S, user report
+ * 2026-11-19: "pocketing the phone dims the glasses"). Going into a pocket, the light falls before
+ * the phone has turned enough for [CoverDetector] to call it covered, so the fast dark-going
+ * adaptation dimmed first and the cover then held that dimmed level. A fall by [ratio] or more
+ * within [windowMs] to below [CoverDetector.DARK_LUX] now holds for [holdMs]; light coming back
+ * releases it at once. A room whose light is switched off still dims, [holdMs] later.
+ */
+class DropGuard(
+    private val holdMs: Long = 6_000,
+    private val windowMs: Long = 2_000,
+    private val ratio: Float = 10f,
+) {
+    private val samples = ArrayDeque<Pair<Long, Float>>()
+    private var holdUntil = -1L
+
+    /** Returns true while the dimming should hold. */
+    fun update(nowMs: Long, lux: Float): Boolean {
+        while (samples.isNotEmpty() && nowMs - samples.first().first > windowMs) samples.removeFirst()
+        val recentMax = samples.maxOfOrNull { it.second } ?: lux
+        samples.addLast(nowMs to lux)
+        val dark = lux < CoverDetector.DARK_LUX
+        if (!dark) {
+            holdUntil = -1
+            return false
+        }
+        if (holdUntil < 0 && recentMax + 1f >= ratio * (lux + 1f)) holdUntil = nowMs + holdMs
+        return nowMs < holdUntil
+    }
+
+    fun reset() {
+        samples.clear()
+        holdUntil = -1
+    }
 }
 
 /** Dim fraction for an adapted light level: none at or above [startLux], [maxDim] in the dark,
