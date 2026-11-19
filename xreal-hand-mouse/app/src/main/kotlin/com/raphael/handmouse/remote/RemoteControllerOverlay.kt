@@ -495,7 +495,7 @@ class RemoteControllerOverlay(
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            if (renderedMaximized) placeMaximized(this, layoutRotation) else placeAtCorner(this, turns)
+            if (renderedMaximized) placeMaximized(this, layoutRotation) else placeAtCorner(this, turns, frame)
         }
         try {
             wm.addView(frame, lp)
@@ -527,11 +527,32 @@ class RemoteControllerOverlay(
      * Puts the window at the screen corner where the upright corner ([RemoteDockPrefs.corner]) lands
      * for [turns], with upright margins: an odd turn puts them on the other screen axis.
      */
-    private fun placeAtCorner(lp: WindowManager.LayoutParams, turns: Int) {
+    private fun placeAtCorner(lp: WindowManager.LayoutParams, turns: Int, frame: View) {
         val oddTurn = (turns and 1) == 1
         lp.gravity = cornerGravity(PanelOrientationMath.screenCorner(prefs.corner, turns))
-        lp.x = dp(if (oddTurn) 18 else 10)
+        // Keep clear of the system back-gesture strips on both sides (user 2026-11-19: the panel
+        // must not fill the width, so edge gestures still work).
+        val (gapLeft, gapRight) = sideGestureGaps()
+        lp.x = maxOf(dp(if (oddTurn) 18 else 10), maxOf(gapLeft, gapRight))
         lp.y = dp(if (oddTurn) 10 else 18)
+        val screenWidth = wm.currentWindowMetrics.bounds.width()
+        val allowed = screenWidth - gapLeft - gapRight
+        frame.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        lp.width = if (frame.measuredWidth > allowed) allowed else WindowManager.LayoutParams.WRAP_CONTENT
+        if (lp.width == allowed) lp.x = if (lp.gravity and Gravity.START == Gravity.START || lp.gravity and Gravity.LEFT == Gravity.LEFT) gapLeft else gapRight
+    }
+
+    /**
+     * Left and right widths the panel leaves free for the system edge gestures: the system-gesture
+     * insets (the back-gesture strips with gesture navigation) plus a small gap, at least
+     * [EDGE_GAP_MIN_DP].
+     */
+    private fun sideGestureGaps(): Pair<Int, Int> {
+        val g = runCatching {
+            wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemGestures())
+        }.getOrNull()
+        val min = dp(EDGE_GAP_MIN_DP)
+        return maxOf(min, (g?.left ?: 0) + dp(4)) to maxOf(min, (g?.right ?: 0) + dp(4))
     }
 
     /**
@@ -556,10 +577,14 @@ class RemoteControllerOverlay(
             Insets.NONE
         }
         val margin = dp(4)
+        // Leave the back-gesture strips free on both sides, like placeAtCorner.
+        val (gapLeft, gapRight) = sideGestureGaps()
+        val left = maxOf(insets.left + margin, gapLeft)
+        val right = maxOf(insets.right + margin, gapRight)
         lp.gravity = Gravity.TOP or Gravity.START
-        lp.x = insets.left + margin
+        lp.x = left
         lp.y = insets.top + margin
-        lp.width = screenWidth - insets.left - insets.right - 2 * margin
+        lp.width = screenWidth - left - right
         lp.height = screenHeight - insets.top - insets.bottom - 2 * margin
         return known
     }
@@ -612,7 +637,7 @@ class RemoteControllerOverlay(
             return
         }
         frame.quarterTurns = turns
-        if (renderedMaximized) placeMaximized(lp, rotation) else placeAtCorner(lp, turns)
+        if (renderedMaximized) placeMaximized(lp, rotation) else placeAtCorner(lp, turns, frame)
         // Raw contacts are placed again once this layout has run (RotatedFrame.isLayoutRequested).
         layoutRotation = rotation
         try {
@@ -692,7 +717,14 @@ class RemoteControllerOverlay(
      */
     private fun portraitPanel(): View {
         val panel = panelContainer(LinearLayout.VERTICAL)
-        val width = if (padMaximized) LinearLayout.LayoutParams.MATCH_PARENT else dp(PORTRAIT_WIDTH_DP)
+        val width = if (padMaximized) {
+            LinearLayout.LayoutParams.MATCH_PARENT
+        } else {
+            // Narrower when the edge-gesture gaps leave less room (placeAtCorner), so nothing is cut.
+            val (gapLeft, gapRight) = sideGestureGaps()
+            val room = wm.currentWindowMetrics.bounds.width() - gapLeft - gapRight - panel.paddingLeft - panel.paddingRight
+            minOf(dp(PORTRAIT_WIDTH_DP), room)
+        }
         if (settingsOpen) {
             panel.addView(settingsSheet(compact = false), LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(8)
@@ -1773,8 +1805,11 @@ class RemoteControllerOverlay(
         const val PAD_BUTTON_DP = 34
         const val PAD_BUTTON_MARGIN_DP = 6
 
+        /** Smallest gap kept free at each side edge for system gestures (no inset reported). */
+        const val EDGE_GAP_MIN_DP = 20
+
         /** The touchpad's enlarge switch, at the right end of its top row. */
-        const val ENLARGE_CHIP_WIDTH_DP = 52
+        const val ENLARGE_CHIP_WIDTH_DP = 44
 
         /** Where the touchpad's top row of controls ends: what lies under it (popup, chip, hint) starts here. */
         const val PAD_ROW_DP = PAD_BUTTON_MARGIN_DP + PAD_BUTTON_DP + PAD_BUTTON_MARGIN_DP
