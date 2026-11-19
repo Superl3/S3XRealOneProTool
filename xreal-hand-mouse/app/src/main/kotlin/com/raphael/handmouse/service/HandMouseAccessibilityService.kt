@@ -41,6 +41,7 @@ import com.raphael.handmouse.remote.SystemCursorTracker
 import com.raphael.handmouse.util.KEY_BTN_PHOTO
 import com.raphael.handmouse.util.KEY_BTN_RECORD
 import com.raphael.handmouse.util.KEY_BTN_TRACKING
+import com.raphael.handmouse.util.KEY_DIM_AUTO
 import com.raphael.handmouse.util.KEY_TRACKING_ENABLED
 import com.raphael.handmouse.util.Prefs
 
@@ -150,6 +151,10 @@ class HandMouseAccessibilityService : AccessibilityService() {
     // Eye Tools fork: settings screen → CursorPipeline, live (listener runs on the main thread,
     // the same thread CursorPipeline.onHandResult runs on).
     private val settingsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // Whoever changed them (settings screen, notification, Remote panel, a tile), the two
+        // toggle tiles show the new state.
+        if (key == KEY_DIM_AUTO) DimTileService.refresh(this)
+        if (key == KEY_TRACKING_ENABLED) HandGestureTileService.refresh(this)
         when {
             key == null -> {}
             key.startsWith("btn_") -> loadButtons()

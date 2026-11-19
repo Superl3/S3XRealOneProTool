@@ -180,7 +180,14 @@ class Prefs(context: Context) {
     val enhanceOutputHeight: Int get() = (prefs.getString(KEY_ENHANCE_HEIGHT, "720") ?: "720").toIntOrNull() ?: 720
 
     // ---- Display ----
-    val dimAuto: Boolean get() = prefs.getBoolean(KEY_DIM_AUTO, true)
+    /**
+     * Auto-dimming of the glasses from the phone's light sensor. Written by the settings screen, the
+     * Remote's ⚙ sheet and its Quick Settings tile; the accessibility service's listener applies it
+     * at once (`applyDimSettings`).
+     */
+    var dimAuto: Boolean
+        get() = prefs.getBoolean(KEY_DIM_AUTO, true)
+        set(value) = prefs.edit().putBoolean(KEY_DIM_AUTO, value).apply()
     val dimMaxPct: Int get() = prefs.getInt(KEY_DIM_MAX, 60)
     val dimStartLux: Int get() = prefs.getInt(KEY_DIM_START_LUX, 20)
 

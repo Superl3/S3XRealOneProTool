@@ -31,6 +31,8 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import com.raphael.handmouse.service.DimTileService
+import com.raphael.handmouse.service.HandGestureTileService
 import com.raphael.handmouse.util.Prefs
 import java.util.Locale
 import kotlin.math.abs
@@ -1398,8 +1400,9 @@ class RemoteControllerOverlay(
     /**
      * The settings sheet with each row's height in dp (a switch or button row is [rowDp]): the
      * touchpad speed and air mouse sensitivity sliders, the head compensation switch, the switch
-     * that hides the touchpad's round buttons while it is enlarged, the DeX system cursor switch
-     * (off by default, it needs Shizuku: spec section S), and the manual rotate ([rotateNowButton])
+     * that hides the touchpad's round buttons while it is enlarged, the auto-dimming and hand
+     * gesture switches side by side ([dimToggle], [handGestureToggle]; the DeX system cursor switch,
+     * [cursorToggle], is no longer shown: spec section S-8), and the manual rotate ([rotateNowButton])
      * beside the scroll buttons (two fingers on the touchpad do the same). The floating button's
      * place is chosen by dragging it, so the sheet has no corner control any more.
      */
@@ -1423,7 +1426,7 @@ class RemoteControllerOverlay(
             ) { actions.setAirSensitivity(it) } to SLIDER_ROW_DP,
             headToggle() to rowDp,
             hidePadButtonsToggle() to rowDp,
-            cursorToggle() to rowDp,
+            buttonRow(dimToggle(), handGestureToggle()) to rowDp,
             buttonRow(
                 rotateNowButton(),
                 momentary(if (system) "↑ 스크롤" else "↑ 스와이프", if (system) "커서 위치에서 위로 스크롤 (휠 5칸)" else "커서 아래 창 위로 스와이프", textSize = 12f) {
@@ -1526,7 +1529,42 @@ class RemoteControllerOverlay(
     ) { prefs.hidePadButtonsEnlarged = !prefs.hidePadButtonsEnlarged }
 
     /**
-     * The DeX system cursor switch, only here in the sheet: off by default (spec section S), since
+     * Auto-dimming of the glasses ([Prefs.dimAuto]), the same setting as the app's settings screen
+     * and the Quick Settings tile ([DimTileService]); the accessibility service applies it as it is
+     * saved. These settings live in the app's preferences, which this panel does not observe, so the
+     * switch re-renders the panel itself (after the lift) and asks the tile to show the new state.
+     */
+    private fun dimToggle(): View = toggleView(
+        "자동 디밍",
+        "안경 화면 자동 디밍 (폰 조도 센서)",
+        appPrefs.dimAuto,
+        labelSize = 12f,
+    ) {
+        appPrefs.dimAuto = !appPrefs.dimAuto
+        DimTileService.refresh(service)
+        requestRender()
+    }
+
+    /**
+     * Hand tracking gestures on the glasses camera ([Prefs.trackingEnabled]), the same setting as the
+     * app's settings screen, the capture notification's button and the Quick Settings tile
+     * ([HandGestureTileService]); the capture service applies it as it is saved. Re-renders the
+     * panel itself, like [dimToggle].
+     */
+    private fun handGestureToggle(): View = toggleView(
+        "핸드 제스처",
+        "핸드 제스처 (안경 카메라 손 추적)",
+        appPrefs.trackingEnabled,
+        labelSize = 12f,
+    ) {
+        appPrefs.trackingEnabled = !appPrefs.trackingEnabled
+        HandGestureTileService.refresh(service)
+        requestRender()
+    }
+
+    /**
+     * The DeX system cursor switch: no longer shown in the sheet (spec section S-8), kept with its
+     * pref for a return. Off by default (spec section S), since
      * it needs Shizuku and every button works without it. On/off is the saved choice; when it is on
      * but the system cursor is not in use (Shizuku or the virtual mouse not ready) an amber second
      * line says so.

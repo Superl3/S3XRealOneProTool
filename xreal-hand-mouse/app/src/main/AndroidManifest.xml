@@ -74,6 +74,24 @@
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
         </service>
+        <service
+            android:name=".service.DimTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_dim"
+            android:label="@string/tile_dim"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true"/>
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
+        <service
+            android:name=".service.HandGestureTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_hand"
+            android:label="@string/tile_hand_gesture"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true"/>
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+        </service>
 
         <service android:name=".service.EyeCaptureService" android:exported="false"
                  android:foregroundServiceType="connectedDevice|microphone"/>
