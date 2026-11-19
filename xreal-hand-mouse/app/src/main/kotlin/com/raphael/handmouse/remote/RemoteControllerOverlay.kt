@@ -38,9 +38,9 @@ import kotlin.math.roundToInt
 
 /**
  * The Remote panel on the phone display: a floating button that expands into the DeX touchpad
- * (with a row of small controls floating along its top edge: air mouse, keyboard, the apps button
- * that shows the dock as a popup, settings, collapse, enlarge) and the window action buttons (back,
- * home, maximize). Spec 2026-11-17 section S has the layout.
+ * (with small controls floating along its top edge: the "⋯" button, whose menu holds the air mouse,
+ * keyboard, settings and the quick-app dock, then collapse and enlarge) and the window action
+ * buttons (back, home, maximize). Spec 2026-11-17 section S has the layout.
  *
  * The panel is drawn upright for a hold the user chose ([RemoteDockPrefs.panelHold], spec
  * 2026-11-17 sections B and N); the orientation sensor never turns it. The rendered view sits in a
@@ -265,17 +265,20 @@ class RemoteControllerOverlay(
     /** The rotate chip under the touchpad's top row on screen, or null (collapsed, removed). */
     private var rotateChip: TextView? = null
 
-    /** The dock popup over the touchpad on screen ([dockPopup]), or null (collapsed, removed, buttons hidden). */
-    private var dockPopup: LinearLayout? = null
+    /** The more button's menu over the touchpad on screen ([menuPopup]), or null (collapsed, removed, buttons hidden). */
+    private var menuPopup: LinearLayout? = null
 
-    /** The touchpad's apps button on screen, which shows [dockPopup]; accent-filled while it shows. */
-    private var appsButtonView: View? = null
+    /** The face of the touchpad's more button on screen ([moreButton]); accent-filled while its menu shows. */
+    private var moreButtonFace: View? = null
 
     /**
-     * The finger [panelTouch] is about to see landed on the dock popup or the apps button; any other
-     * landing on the panel closes the popup (a touch elsewhere).
+     * The finger [panelTouch] is about to see landed on the menu or the more button; any other
+     * landing on the panel closes the menu (a touch elsewhere).
      */
-    private var dockTouch = false
+    private var menuTouch = false
+
+    /** The menu's air mouse switch asked for the re-render coming next: it renders the menu open. */
+    private var reopenMenu = false
 
     /** The chip's hold last logged as shown (null: hidden), so each show and hide is logged once. */
     private var chipLogged: Int? = null
@@ -533,8 +536,9 @@ class RemoteControllerOverlay(
         // Keep clear of the system back-gesture strips on both sides (user 2026-11-19: the panel
         // must not fill the width, so edge gestures still work).
         val (gapLeft, gapRight) = sideGestureGaps()
-        lp.x = maxOf(dp(if (oddTurn) 18 else 10), maxOf(gapLeft, gapRight))
-        lp.y = dp(if (oddTurn) 10 else 18)
+        lp.x = maxOf(gapLeft, gapRight)
+        // The bottom may touch the screen edge (user 2026-11-19); a top corner keeps its margin.
+        lp.y = if (lp.gravity and Gravity.VERTICAL_GRAVITY_MASK == Gravity.BOTTOM) 0 else dp(if (oddTurn) 10 else 18)
         val screenWidth = wm.currentWindowMetrics.bounds.width()
         val allowed = screenWidth - gapLeft - gapRight
         frame.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
@@ -543,16 +547,17 @@ class RemoteControllerOverlay(
     }
 
     /**
-     * Left and right widths the panel leaves free for the system edge gestures: the system-gesture
-     * insets (the back-gesture strips with gesture navigation) plus a small gap, at least
-     * [EDGE_GAP_MIN_DP].
+     * Left and right widths the panel leaves free for the system edge gestures: half the
+     * system-gesture inset (the back-gesture strip with gesture navigation, about 38 dp on the
+     * SM-S937N), within [EDGE_GAP_MIN_DP]..[EDGE_GAP_MAX_DP]. The whole inset left too little of the
+     * screen (user 2026-11-19); a back swipe starts at the very edge, so half of the strip is enough.
      */
     private fun sideGestureGaps(): Pair<Int, Int> {
         val g = runCatching {
             wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemGestures())
         }.getOrNull()
-        val min = dp(EDGE_GAP_MIN_DP)
-        return maxOf(min, (g?.left ?: 0) + dp(4)) to maxOf(min, (g?.right ?: 0) + dp(4))
+        fun gap(inset: Int) = (inset / 2).coerceIn(dp(EDGE_GAP_MIN_DP), dp(EDGE_GAP_MAX_DP))
+        return gap(g?.left ?: 0) to gap(g?.right ?: 0)
     }
 
     /**
@@ -585,7 +590,8 @@ class RemoteControllerOverlay(
         lp.x = left
         lp.y = insets.top + margin
         lp.width = screenWidth - left - right
-        lp.height = screenHeight - insets.top - insets.bottom - 2 * margin
+        // No margin at the bottom: the pad reaches the navigation bar's inset (user 2026-11-19).
+        lp.height = screenHeight - insets.top - insets.bottom - margin
         return known
     }
 
@@ -662,7 +668,7 @@ class RemoteControllerOverlay(
      * its hold from its raw contact instead. The window's last finger up or a cancel releases both
      * unless a raw touchpad contact is still down, which then does. The click of a button is posted
      * by then and runs before a re-render that waited for the lift. A finger that lands anywhere but
-     * on the dock popup or the apps button closes the popup ([dockTouch]); that touch still does what
+     * on the more button's menu or the more button closes the menu ([menuTouch]); that touch still does what
      * it does there.
      */
     private fun panelTouch(frame: View, event: MotionEvent) {
@@ -670,11 +676,11 @@ class RemoteControllerOverlay(
             MotionEvent.ACTION_DOWN -> {
                 // Diagnostics (spec J item 2): touches reach the panel at all.
                 android.util.Log.d(logTag, "touch down at (" + event.x.toInt() + ", " + event.y.toInt() + ")")
-                closeDockUnlessTouched()
+                closeMenuUnlessTouched()
                 touchRouter.panelDown(event.eventTime, first = true)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                closeDockUnlessTouched()
+                closeMenuUnlessTouched()
                 touchRouter.panelDown(event.eventTime, first = false)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
@@ -683,10 +689,10 @@ class RemoteControllerOverlay(
         }
     }
 
-    /** A landing [panelTouch] handles now: closes the dock popup unless it was on the popup or the apps button. */
-    private fun closeDockUnlessTouched() {
-        if (!dockTouch) setDockOpen(false)
-        dockTouch = false
+    /** A landing [panelTouch] handles now: closes the menu unless it was on the menu or the more button. */
+    private fun closeMenuUnlessTouched() {
+        if (!menuTouch) setMenuOpen(false)
+        menuTouch = false
     }
 
     /** The floating button; smaller and faded while this app's own screen is in front ([appInFront]). */
@@ -806,13 +812,13 @@ class RemoteControllerOverlay(
 
     /**
      * The touchpad with controls floating over it, so they take none of its layout space:
-     * - one row along the top edge: the round buttons ([padButton]) air mouse, keyboard, apps,
-     *   settings and collapse from the left, and the enlarge switch at the right end. The round
-     *   buttons are translucent so the pad still reads as one surface; they are left out while the
-     *   touchpad is enlarged and [RemoteDockPrefs.hidePadButtonsEnlarged] is on, but the enlarge
-     *   switch always stays, so the panel can be made small again;
-     * - under the row: the dock popup ([dockPopup], left, shown by the apps button) and the rotate
-     *   chip ([rotateChip], right), both hidden until wanted and shown in place.
+     * - along the top edge: the more button ([moreButton]) at the left; the rotate chip
+     *   ([rotateChip], hidden until offered), the collapse button and the enlarge switch at the
+     *   right. The round buttons are translucent so the pad still reads as one surface; they are left
+     *   out while the touchpad is enlarged and [RemoteDockPrefs.hidePadButtonsEnlarged] is on, but the
+     *   enlarge switch always stays, so the panel can be made small again;
+     * - under the more button: its menu ([menuPopup]; air mouse, keyboard, settings, the dock's
+     *   quick-app slots), hidden until the more button shows it, in place.
      * Each takes its own touches, so a press on it never reaches the touchpad (the window's events),
      * and [padOverlays] keeps it out of the raw contacts' touchpad area while it is visible
      * ([rawPlacement]). All are direct children of this frame, whose touchpad sits at its origin, so
@@ -823,6 +829,7 @@ class RemoteControllerOverlay(
         addView(touchpad(showButtons), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         val overlays = ArrayList<View>()
         val margin = PAD_BUTTON_MARGIN_DP
+        val top = Gravity.TOP or Gravity.END
         val enlarge = TextView(context).apply {
             text = if (padMaximized) "축소" else "확대"
             textSize = 12f
@@ -839,32 +846,43 @@ class RemoteControllerOverlay(
                 requestRender()
             }
         }
-        addView(enlarge, FrameLayout.LayoutParams(dp(ENLARGE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), Gravity.TOP or Gravity.END).apply {
+        addView(enlarge, FrameLayout.LayoutParams(dp(ENLARGE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), top).apply {
             topMargin = dp(margin)
             marginEnd = dp(margin)
         })
         overlays += enlarge
+        // What lies left of the enlarge switch, from the right edge.
+        var endDp = margin + ENLARGE_CHIP_WIDTH_DP + margin
         if (showButtons) {
-            val buttons = listOf(airButton(), keyboardButton(), appsButton(), settingsButton(), collapseButton())
-            buttons.forEachIndexed { i, button ->
-                addView(button, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), Gravity.TOP or Gravity.START).apply {
-                    topMargin = dp(margin)
-                    marginStart = dp(margin + i * (PAD_BUTTON_DP + margin))
-                })
-            }
-            overlays += buttons
-            val popup = dockPopup()
-            addView(popup, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(DOCK_POPUP_HEIGHT_DP), Gravity.TOP or Gravity.START).apply {
+            val collapse = collapseButton()
+            addView(collapse, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), top).apply {
+                topMargin = dp(margin)
+                marginEnd = dp(endDp)
+            })
+            overlays += collapse
+            endDp += PAD_BUTTON_DP + margin
+            val more = moreButton()
+            addView(more, FrameLayout.LayoutParams(dp(PAD_BUTTON_DP), dp(PAD_BUTTON_DP), Gravity.TOP or Gravity.START).apply {
+                topMargin = dp(margin)
+                marginStart = dp(margin)
+            })
+            overlays += more
+            val menu = menuPopup()
+            addView(menu, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
                 topMargin = dp(PAD_ROW_DP)
                 marginStart = dp(margin)
             })
-            overlays += popup
-            dockPopup = popup
+            overlays += menu
+            menuPopup = menu
+            // A re-render the menu's own air mouse switch caused: the menu stays open.
+            if (reopenMenu) setMenuOpen(true)
         }
+        reopenMenu = false
+        // In the top row, between the more button and the controls at the right: it overlaps neither.
         val chip = rotateChipView()
-        addView(chip, FrameLayout.LayoutParams(dp(ROTATE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(PAD_ROW_DP)
-            marginEnd = dp(margin)
+        addView(chip, FrameLayout.LayoutParams(dp(ROTATE_CHIP_WIDTH_DP), dp(PAD_BUTTON_DP), top).apply {
+            topMargin = dp(margin)
+            marginEnd = dp(endDp)
         })
         overlays += chip
         rotateChip = chip
@@ -872,9 +890,35 @@ class RemoteControllerOverlay(
     }
 
     /**
-     * The air mouse switch as a round pad button: filled with the accent while on. Tap turns it on or
-     * off; a long press brings the cursor to the middle of the DeX display ([RemoteActions.recenter],
-     * aim at the middle of the screen while holding).
+     * The more button "⋯": shows or hides its menu ([menuPopup]), which holds the controls used less
+     * often than the touchpad (air mouse, keyboard, settings, quick apps), so they take no room on
+     * it. Accent-filled while the menu shows. A small accent dot on it says the air mouse is on,
+     * since its switch is inside the menu. Its landing marks the touch as the menu's ([menuTouch]),
+     * so [panelTouch] does not take it for a touch elsewhere.
+     */
+    private fun moreButton(): View = FrameLayout(context).apply {
+        val air = prefs.airMouse
+        val face = padButton("⋯", "메뉴 열기/닫기 (공중 마우스, 키보드, 설정, 빠른 앱)" + if (air) ", 공중 마우스 켜짐" else "")
+        addView(face, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        if (air) {
+            val dot = View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(AIR_DOT_COLOR)
+                    setStroke(dp(1), Color.WHITE)
+                }
+            }
+            addView(dot, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.END))
+        }
+        moreButtonFace = face
+        actOnPress(face, "⋯ (menu)", onDown = { menuTouch = true }) { setMenuOpen(menuPopup?.visibility != View.VISIBLE) }
+    }
+
+    /**
+     * The air mouse switch in the menu: accent-filled while on. Tap turns it on or off and keeps the
+     * menu open (the re-render it causes reopens it, [reopenMenu]); a long press brings the cursor to
+     * the middle of the DeX display ([RemoteActions.recenter], aim at the middle of the screen while
+     * holding).
      */
     private fun airButton(): View {
         val on = prefs.airMouse
@@ -883,7 +927,11 @@ class RemoteControllerOverlay(
             "공중 마우스 ${if (on) "켜짐" else "꺼짐"} (탭 = 켜기/끄기, 길게 = 커서를 가운데로)",
             active = on,
         ).also { b ->
-            tapOrHold(b, "✈ air mouse (was " + (if (on) "on" else "off") + ")", tap = { actions.setAirMouse(!prefs.airMouse) }) {
+            val tap = {
+                reopenMenu = true
+                actions.setAirMouse(!prefs.airMouse)
+            }
+            tapOrHold(b, "✈ air mouse (was " + (if (on) "on" else "off") + ")", tap) {
                 actions.recenter()
                 true
             }
@@ -893,18 +941,10 @@ class RemoteControllerOverlay(
     /** Brings up the soft keyboard for the input field focused on DeX (one shot; Back hides it). */
     private fun keyboardButton(): View =
         padButton("⌨", "DeX 입력창에 키보드 띄우기 (먼저 입력창을 클릭)").also { b ->
-            actOnPress(b, "⌨ (keyboard)") { actions.showKeyboard() }
-        }
-
-    /**
-     * Shows or hides the dock popup ([dockPopup]); the four quick-app slots are used too rarely to
-     * hold a row of the panel. Accent-filled while the popup shows. Its landing marks the touch as
-     * the dock's ([dockTouch]), so [panelTouch] does not take it for a touch elsewhere.
-     */
-    private fun appsButton(): View =
-        padButton("▦", "빠른 앱 열기/닫기").also { b ->
-            appsButtonView = b
-            actOnPress(b, "▦ (apps)", onDown = { dockTouch = true }) { setDockOpen(dockPopup?.visibility != View.VISIBLE) }
+            actOnPress(b, "⌨ (keyboard)") {
+                setMenuOpen(false)
+                actions.showKeyboard()
+            }
         }
 
     /** Opens or closes the settings sheet; filled with the accent while it is open. */
@@ -914,7 +954,7 @@ class RemoteControllerOverlay(
             if (settingsOpen) "설정 닫기" else "설정 열기 (속도, 감도, 머리 보정, 커서, 위치, 스크롤)",
             active = settingsOpen,
         ).also { b ->
-            // The re-render waits for the lift (requestRender).
+            // The re-render waits for the lift (requestRender), and closes the menu.
             actOnPress(b, "⚙ open=" + !settingsOpen) {
                 settingsOpen = !settingsOpen
                 requestRender()
@@ -952,46 +992,57 @@ class RemoteControllerOverlay(
     }
 
     /**
-     * The dock as a small strip under the touchpad's top row, hidden until the apps button shows it
-     * ([setDockOpen]). Its slots behave as the dock always did ([dockButton]). Every landing on it
-     * marks the touch as the dock's ([dockTouch]); its gaps take the touch too, so nothing on it
-     * reaches the touchpad.
+     * The more button's menu under the touchpad's top row, hidden until it shows it ([setMenuOpen]):
+     * a row of air mouse, keyboard and settings, and under it the dock's four quick-app slots, which
+     * behave as the dock always did ([dockButton]). Every landing on it marks the touch as the menu's
+     * ([menuTouch]); its gaps take the touch too, so nothing on it reaches the touchpad.
      */
-    private fun dockPopup(): LinearLayout = object : LinearLayout(context) {
+    private fun menuPopup(): LinearLayout = object : LinearLayout(context) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) dockTouch = true
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) menuTouch = true
             return super.dispatchTouchEvent(ev)
         }
     }.apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         setPadding(dp(4), dp(4), dp(4), dp(4))
         background = outlined(OFF_STROKE_COLOR, 14f, fill = Color.argb(235, 30, 33, 38))
         isClickable = true
         visibility = View.GONE
-        repeat(RemoteDockPrefs.SLOT_COUNT) { slot ->
-            addView(dockButton(slot), LinearLayout.LayoutParams(dp(DOCK_SLOT_DP), LinearLayout.LayoutParams.MATCH_PARENT).apply {
-                if (slot > 0) marginStart = dp(4)
-            })
+        val controls = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            listOf(airButton(), keyboardButton(), settingsButton()).forEachIndexed { i, button ->
+                addView(button, LinearLayout.LayoutParams(dp(MENU_ITEM_DP), dp(MENU_ITEM_DP)).apply {
+                    if (i > 0) marginStart = dp(4)
+                })
+            }
         }
+        addView(controls, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val dock = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            repeat(RemoteDockPrefs.SLOT_COUNT) { slot ->
+                addView(dockButton(slot), LinearLayout.LayoutParams(dp(MENU_ITEM_DP), dp(MENU_ITEM_DP)).apply {
+                    if (slot > 0) marginStart = dp(4)
+                })
+            }
+        }
+        addView(dock, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(4)
+        })
     }
 
-    /**
-     * Shows or hides the dock popup in place (no re-render, which would cut a touch). The rotate chip
-     * steps aside while it shows: on a narrow touchpad the two would overlap.
-     */
-    private fun setDockOpen(open: Boolean) {
-        val popup = dockPopup ?: return
+    /** Shows or hides the more button's menu in place (no re-render, which would cut a touch). */
+    private fun setMenuOpen(open: Boolean) {
+        val popup = menuPopup ?: return
         if ((popup.visibility == View.VISIBLE) == open) return
-        android.util.Log.d(logTag, "dock popup " + if (open) "open" else "closed")
+        android.util.Log.d(logTag, "menu " + if (open) "open" else "closed")
         popup.visibility = if (open) View.VISIBLE else View.GONE
-        appsButtonView?.let { setPadButtonActive(it, open) }
-        suggestionChanged()
+        moreButtonFace?.let { setPadButtonActive(it, open) }
     }
 
     /**
      * The rotate chip: accent fill, ↻ or ↺ for the way the panel will turn. It floats over the
-     * touchpad under the top row of controls, at the right ([touchpadWithCorner]): the panel has no
-     * other row left to hold it. It appears only while no finger is on the panel, and a press on it
+     * touchpad in its top row, left of the collapse button ([touchpadWithCorner]), where it covers no
+     * other control and leaves the menu under ⋯ its room. It appears only while no finger is on the panel, and a press on it
      * counts only once it is armed, so a pad tap that meets it fresh does nothing. It acts on its own
      * finger's ACTION_DOWN, like the one-shot buttons (a touch the input filter cancels never
      * clicks), and only when that press landed [RotationSuggestion.ARM_MS] after the chip appeared;
@@ -1071,8 +1122,7 @@ class RemoteControllerOverlay(
             chipLogged = target
         }
         rotateChip?.let { chip ->
-            // The dock popup shares the space under the top row: the chip waits until it closes.
-            if (target == null || dockPopup?.visibility == View.VISIBLE) {
+            if (target == null) {
                 chip.visibility = View.GONE
             } else {
                 val counterClockwise = PanelOrientationMath.suggestionTurn(suggestion.panelHold, target) == 3
@@ -1575,12 +1625,12 @@ class RemoteControllerOverlay(
         b.setOnClickListener {
             android.util.Log.d(logTag, "click dock slot $slot (" + prefs.packageFor(slot) + ")")
             // The popup has done its job.
-            setDockOpen(false)
+            setMenuOpen(false)
             if (prefs.packageFor(slot) == null) actions.pickSlot(slot) else actions.launchSlot(slot)
         }
         b.setOnLongClickListener {
             android.util.Log.d(logTag, "long click dock slot $slot")
-            setDockOpen(false)
+            setMenuOpen(false)
             actions.pickSlot(slot)
             true
         }
@@ -1737,9 +1787,9 @@ class RemoteControllerOverlay(
     private fun resetPad() {
         padView = null
         padOverlays = emptyList()
-        dockPopup = null
-        appsButtonView = null
-        dockTouch = false
+        menuPopup = null
+        moreButtonFace = null
+        menuTouch = false
         mainHandler.removeCallbacks(padTick)
         padMachine.reset(SystemClock.uptimeMillis())
         touchRouter.reset()
@@ -1805,20 +1855,23 @@ class RemoteControllerOverlay(
         const val PAD_BUTTON_DP = 34
         const val PAD_BUTTON_MARGIN_DP = 6
 
-        /** Smallest gap kept free at each side edge for system gestures (no inset reported). */
-        const val EDGE_GAP_MIN_DP = 20
+        /**
+         * Bounds of the gap kept free at each side edge for system gestures ([sideGestureGaps]):
+         * half the system-gesture inset, but at least this little and at most this much.
+         */
+        const val EDGE_GAP_MIN_DP = 12
+        const val EDGE_GAP_MAX_DP = 20
 
         /** The touchpad's enlarge switch, at the right end of its top row. */
         const val ENLARGE_CHIP_WIDTH_DP = 44
 
-        /** Where the touchpad's top row of controls ends: what lies under it (popup, chip, hint) starts here. */
+        /** Where the touchpad's top row of controls ends: what lies under it (the menu, the hint) starts here. */
         const val PAD_ROW_DP = PAD_BUTTON_MARGIN_DP + PAD_BUTTON_DP + PAD_BUTTON_MARGIN_DP
 
-        /** The dock popup's height and a slot's width in it. */
-        const val DOCK_POPUP_HEIGHT_DP = 44
-        const val DOCK_SLOT_DP = 40
+        /** A square item of the more button's menu (a control or a quick-app slot). */
+        const val MENU_ITEM_DP = 36
 
-        /** The rotate chip under the touchpad's top row, at the right. */
+        /** The rotate chip in the touchpad's top row, left of the collapse button. */
         const val ROTATE_CHIP_WIDTH_DP = 88
 
         /** Inner height of the landscape layout (the panel adds 16 dp of padding: 300 dp ≤ 300). */
@@ -1829,10 +1882,10 @@ class RemoteControllerOverlay(
 
         /**
          * Least landscape touchpad width while the settings column narrows it, so the touchpad's top
-         * row of controls (five round buttons and the enlarge switch, 264 dp) still fits; below it
-         * the settings column narrows instead ([landscapeWidthsDp]).
+         * row (⋯, the rotate chip, −, the enlarge switch: 230 dp) still fits; below it the settings
+         * column narrows instead ([landscapeWidthsDp]).
          */
-        const val LANDSCAPE_PAD_MIN_WIDTH_DP = 270
+        const val LANDSCAPE_PAD_MIN_WIDTH_DP = 240
 
         /** The landscape settings column; wide enough for the head compensation switch's label. */
         const val LANDSCAPE_SETTINGS_WIDTH_DP = 224
@@ -1879,7 +1932,10 @@ class RemoteControllerOverlay(
 
         const val AIR_HOLD_HINT = "길게: ✈·⌂ 가운데 · ↩ 창 닫기"
 
-        const val BUTTONS_HINT = "▦ = 빠른 앱 · − = 접기"
+        const val BUTTONS_HINT = "⋯ = 공중 마우스·키보드·설정·빠른 앱 · − = 접기"
+
+        /** The dot on the more button while the air mouse is on (its switch is inside the menu). */
+        val AIR_DOT_COLOR = Color.argb(255, 30, 136, 229)
 
         /** Fill of a switch that is on, and of the settings button while the sheet is open. */
         val ACTIVE_COLOR = Color.argb(245, 30, 136, 229)
